@@ -103,10 +103,15 @@ enum ClaudeLayout {
     static let optionRow: CGFloat = 30
     static let footer: CGFloat = 26
 
-    static func listHeight(_ q: ClaudeQuestion) -> CGFloat {
-        let n = CGFloat(q.options.count)
-        return 4 + CGFloat(questionLines(q.text)) * questionLineHeight + 16 + 10 + n * optionRow + (n - 1) * 2 + 10 + footer + 12
+    static func listHeight(_ q: ClaudeQuestion) -> CGFloat { listHeight(lines: questionLines(q.text), options: q.options.count) }
+
+    static func listHeight(lines: Int, options: Int) -> CGFloat {
+        let n = CGFloat(options)
+        return 4 + CGFloat(lines) * questionLineHeight + 16 + 10 + n * optionRow + (n - 1) * 2 + 10 + footer + 12
     }
+
+    /// The tallest drop the notch shows: a three-line question with four options (see fitsNotch).
+    static let tallest = listHeight(lines: 3, options: 4)
 
     static func size(_ notice: ClaudeNotice?, notch: CGSize) -> CGSize {
         let c = notice.map(content) ?? content(kind: .waiting)

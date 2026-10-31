@@ -279,6 +279,9 @@ enum SnapshotRenderer {
             .init(label: "UserDefaults", detail: "No extra files"), .init(label: "JSON file", detail: "Easy to copy to another Mac")], multi: false, count: 1))
         case "question-long": .question(ClaudeQuestion(text: "Before I go on, should alerts also appear on the external display when the lid is closed, or only on the built-in screen, and should that be a setting?",
             options: ["Every display", "Built-in only", "External only", "Ask me later", "Other"].map { .init(label: $0, detail: "") }, multi: false, count: 1))
+        case "question-wide": .question(ClaudeQuestion(text: "De las 20 ideas para el personaje de Codex, ¿cuáles te gustan más, aunque sea por un solo detalle?", options: [
+            .init(label: "Animales", detail: "Gato, Búho, Pingüino, Rana, Pollito o Pececito"), .init(label: "Criaturas flotantes", detail: "Fantasmita, Medusa, Murciélago o Abejita"),
+            .init(label: "Objetos con cara", detail: "Foquito, Engranaje, Planetita, Hongo o Cactus"), .init(label: "Bichos raros", detail: "Slime, Cíclope, Pulpito, Mariquita o Nube de lluvia")], multi: true, count: 1))
         case "done": .done(summary: ClaudeCenter.summary(of: "Done.\n\nFixed the progress bar bounce and ran the tests: all 48 pass."), minutes: 4)
         case "done-long": .done(summary: ClaudeCenter.summary(of: "All done.\n\n```swift\nlet x = 1\n```\n\nI went through the 11 files, updated the Spanish and English strings, added the Settings section with its two toggles and tested the hook installer on a copy of your config. Do you want me to install it now or review the diff first?"), minutes: 37)
         case "done-short": .done(summary: ClaudeCenter.summary(of: "Done."), minutes: nil)

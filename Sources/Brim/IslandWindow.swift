@@ -4,8 +4,9 @@ import SwiftUI
 /// The island on one display: its panel, hover area and open state.
 @MainActor
 final class IslandWindow {
-    /// Transparent canvas, with room for the shadow.
-    static let canvas = CGSize(width: 640, height: 240)
+    /// Transparent canvas: tall enough for the tallest drop under the tallest notch, plus room for the shadow.
+    /// Clicks on its empty parts go through to the windows below.
+    static let canvas = CGSize(width: 640, height: max(240, (ClaudeLayout.tallest + 40 + 32).rounded(.up)))
     private static let hoverDelay: TimeInterval = 0.1
     private static let leaveDelay: TimeInterval = 0.12
 
