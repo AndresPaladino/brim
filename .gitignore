@@ -1,0 +1,12 @@
+.DS_Store
+.build/
+.swiftpm/
+dist/
+prototipos/
+Icon/
+*.xcodeproj/
+xcuserdata/
+scripts/dev/local/
+scripts/dev/brimctl
+HANDOFF.md
+web-assets/

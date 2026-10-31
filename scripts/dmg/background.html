@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Brim disk image background</title>
+<style>
+/* Background of the .dmg window, 600 × 400 pt. Finder places the icons on top:
+   Brim at (160, 170) and Applications at (440, 170), icon centers. */
+html,body{margin:0;width:600px;height:400px;overflow:hidden}
+body{background:linear-gradient(#fbfbfd,#eef0f5);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f;-webkit-font-smoothing:antialiased;position:relative}
+.arrow{position:absolute;left:245px;top:158px}
+.title{position:absolute;left:0;right:0;top:282px;text-align:center;font:600 15px/1.2 -apple-system,"SF Pro Display",sans-serif}
+.tip{position:absolute;left:50%;transform:translateX(-50%);top:316px;width:476px;display:flex;gap:9px;align-items:flex-start;background:#fff;border-radius:12px;padding:10px 14px;box-shadow:0 0 0 .5px rgba(0,0,0,.1);font-size:12.5px;line-height:1.4;color:#3a3a3c}
+.tip svg{flex:none;margin-top:1px}
+.tip b{font-weight:600;color:#1d1d1f}
+</style>
+</head>
+<body>
+  <svg class="arrow" width="110" height="24" viewBox="0 0 110 24" aria-hidden="true"><path d="M4 12H98M88 4l10 8-10 8" fill="none" stroke="#a1a1aa" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  <div class="title">Drag Brim to Applications</div>
+  <div class="tip"><svg width="17" height="17" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#0a84ff"/><path d="M12 7.5v.01M12 10.5v6" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>
+    <span>If macOS won’t open it the first time, go to <b>System Settings → Privacy &amp; Security</b> and click <b>Open Anyway</b>. You only do this once.</span></div>
+</body>
+</html>
