@@ -6,6 +6,8 @@
 
 <p align="center"><a href="https://andrespaladino.github.io/brim/">Website</a> · <a href="../../releases/latest">Download</a> · <a href="#build">Build from source</a></p>
 
+<p align="center"><img src="assets/hero.png" width="760" alt="Brim's music player open under the MacBook notch"></p>
+
 <p align="center"><img src="assets/demos/music.gif" width="480" alt="Music player opening under the notch"><br><sub>Artwork next to the notch. Hover to open the player.</sub></p>
 
 <p align="center"><img src="assets/demos/controls.gif" width="480" alt="Volume and brightness"><br><sub>Volume and brightness, without the macOS indicator.</sub></p>
