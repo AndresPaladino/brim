@@ -4,7 +4,7 @@
 
 <p align="center">A notch island for macOS.<br>Native, light on battery, no CPU at rest.</p>
 
-<p align="center"><a href="../../releases/latest">Download</a> · <a href="#build">Build from source</a></p>
+<p align="center"><a href="https://andrespaladino.github.io/brim/">Website</a> · <a href="../../releases/latest">Download</a> · <a href="#build">Build from source</a></p>
 
 <p align="center"><img src="assets/demos/music.gif" width="480" alt="Music player opening under the notch"><br><sub>Artwork next to the notch. Hover to open the player.</sub></p>
 
