@@ -1,5 +1,6 @@
 #!/bin/zsh
-# Builds a universal Brim.app (Apple silicon and Intel) and packs it in dist/Brim-<version>.dmg.
+# Builds a universal Brim.app (Apple silicon and Intel) and packs it in dist/Brim.dmg.
+# The release asset keeps that name so releases/latest/download/Brim.dmg always works.
 # Usage: scripts/dist.sh
 set -euo pipefail
 cd "${0:A:h}/.."
@@ -58,7 +59,7 @@ end tell
 OSA
 sync
 hdiutil detach "$DEV" >/dev/null
-DMG="dist/Brim-$VERSION.dmg"
+DMG="dist/Brim.dmg"
 rm -f "$DMG"
 hdiutil convert "$TMP/rw.dmg" -format UDZO -o "$DMG" >/dev/null
 echo "Built $DMG"

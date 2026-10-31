@@ -109,14 +109,25 @@ enum SnapshotRenderer {
                               artwork: sampleArtwork, accent: Color(red: 1, green: 0.62, blue: 0.42))
         let buds = DeviceArtwork.buds(productID: 0x2027).map { AudioDeviceEvent.Visual.buds(left: $0.left, right: $0.right) }
 
+        // --wallpaper <png>: a 16" MacBook Pro wallpaper at 1.35× zoom, matching the website loop videos.
+        let args = CommandLine.arguments
+        let wallpaper = args.firstIndex(of: "--wallpaper").flatMap { $0 + 1 < args.count ? NSImage(contentsOfFile: args[$0 + 1]) : nil }
+        let zoom: CGFloat = wallpaper == nil ? 1 : 1.35
+
         func shot(_ name: String, height: CGFloat, _ setup: (IslandModel, IslandScreen) -> Void) {
             let model = IslandModel()
             let screen = IslandScreen(geometry: notch)
             setup(model, screen)
-            let size = CGSize(width: 640, height: height)
+            let size = CGSize(width: 640 / zoom, height: height)
+            let background: AnyView = if let wallpaper {
+                AnyView(Image(nsImage: wallpaper).resizable().frame(width: 1728, height: 1117)
+                    .frame(width: size.width, height: size.height, alignment: .top).clipped())
+            } else {
+                AnyView(backdrop)
+            }
             let view = IslandView(model: model, screen: screen)
                 .frame(width: size.width, height: size.height)
-                .background(backdrop)
+                .background(background)
             let host = NSHostingView(rootView: view)
             let w = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
             w.contentView = host
