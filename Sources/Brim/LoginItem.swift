@@ -38,6 +38,9 @@ final class IslandMenu: NSObject {
         let settings = NSMenuItem(title: Strings.settings, action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
+        let updates = NSMenuItem(title: Strings.checkForUpdates, action: #selector(checkForUpdates), keyEquivalent: "")
+        updates.target = self
+        menu.addItem(updates)
         menu.addItem(.separator())
         let login = NSMenuItem(title: Strings.openAtLogin, action: #selector(toggleLogin), keyEquivalent: "")
         login.target = self
@@ -49,6 +52,10 @@ final class IslandMenu: NSObject {
     }
 
     @objc private func toggleLogin() { Preferences.shared.openAtLogin = !LoginItem.isEnabled }
+    @objc private func checkForUpdates() {
+        onOpenSettings?()
+        Updater.shared.checkForUpdates()
+    }
     @objc private func openSettings() {
         onOpenSettings?()
         SettingsWindow.shared.show()

@@ -61,6 +61,10 @@
 "onb.rightClick" = "Right-click the notch to come back to these settings anytime.";
 "settings.welcome" = "Welcome Screen";
 "settings.showWelcome" = "Show…";
+"menu.checkForUpdates" = "Check for Updates…";
+"settings.updates" = "Updates";
+"settings.autoUpdate" = "Install Updates Automatically";
+"settings.checkNow" = "Check Now…";
 
 /* Claude Code */
 "claude.permissionFor" = "Allow %@?";

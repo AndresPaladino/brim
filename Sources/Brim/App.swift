@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         OnboardingWindow.shared.onFinished = { [weak self] in self?.controller?.greet() }
         if OnboardingWindow.shouldShow { OnboardingWindow.shared.show() }
         LoginItem.enableOnFirstLaunch()
+        Updater.shared.start()
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in

@@ -24,7 +24,7 @@ Brim is written in Swift with AppKit and SwiftUI. It only wakes up when macOS re
 
 ## Install
 
-Download the `.dmg` from [Releases](../../releases/latest) and drag Brim to Applications.
+Download the `.dmg` from [Releases](../../releases/latest) and drag Brim to Applications. From 1.3 on, Brim updates itself: it checks once a day, and you can also right-click the notch and choose Check for Updates.
 
 Brim isn't notarized, so macOS blocks it the first time. Open System Settings, go to Privacy & Security and click Open Anyway.
 

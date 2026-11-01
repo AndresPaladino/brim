@@ -29,6 +29,11 @@ clang -dynamiclib -fobjc-arc -O2 -Wall -arch arm64 -arch x86_64 -framework Found
 cp Helper/NowPlayingBridge.pl "$APP/Contents/Resources/"
 cp Resources/claude-hook.sh Resources/codex-hook.sh "$APP/Contents/Resources/"
 
+# Sparkle, for updates. It arrives signed and notarized by its developers, so it keeps that signature.
+mkdir -p "$APP/Contents/Frameworks"
+ditto "$SCRATCH/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" \
+  "$APP/Contents/Frameworks/Sparkle.framework"
+
 xattr -cr "$APP"
 
 if security find-certificate -c "$IDENTITY" >/dev/null 2>&1; then

@@ -44,6 +44,13 @@ private struct SettingsForm<Content: View>: View {
 
 private struct GeneralSettings: View {
     @ObservedObject var prefs: Preferences
+    // Sparkle keeps this setting, so the toggle keeps a copy to redraw.
+    private let autoInstall = State(initialValue: Updater.shared.automaticallyInstalls)
+
+    private var autoUpdate: Binding<Bool> {
+        Binding(get: { autoInstall.wrappedValue },
+                set: { Updater.shared.automaticallyInstalls = $0; autoInstall.wrappedValue = $0 })
+    }
 
     var body: some View {
         SettingsForm {
@@ -68,6 +75,12 @@ private struct GeneralSettings: View {
                         SettingsWindow.shared.close()
                         OnboardingWindow.shared.show()
                     }
+                }
+            }
+            Section {
+                Toggle(Strings.autoUpdate, isOn: autoUpdate)
+                LabeledContent(Strings.updates) {
+                    Button(Strings.checkNow) { Updater.shared.checkForUpdates() }
                 }
             } footer: {
                 Text("Brim \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")

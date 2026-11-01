@@ -12,6 +12,10 @@ enum Strings {
     static var settings: String { t("menu.settings") }
     static var welcomeScreen: String { t("settings.welcome") }
     static var showWelcome: String { t("settings.showWelcome") }
+    static var checkForUpdates: String { t("menu.checkForUpdates") }
+    static var updates: String { t("settings.updates") }
+    static var autoUpdate: String { t("settings.autoUpdate") }
+    static var checkNow: String { t("settings.checkNow") }
 
     // Settings
     static var settingsTitle: String { t("settings.title") }

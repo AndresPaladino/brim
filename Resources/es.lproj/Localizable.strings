@@ -61,6 +61,10 @@
 "onb.rightClick" = "Hacé clic derecho en el notch para volver a estos ajustes cuando quieras.";
 "settings.welcome" = "Pantalla de bienvenida";
 "settings.showWelcome" = "Mostrar…";
+"menu.checkForUpdates" = "Buscar actualizaciones…";
+"settings.updates" = "Actualizaciones";
+"settings.autoUpdate" = "Instalar actualizaciones automáticamente";
+"settings.checkNow" = "Buscar ahora…";
 
 /* Claude Code */
 "claude.permissionFor" = "Permiso para %@";
