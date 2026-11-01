@@ -8,7 +8,7 @@ enum SettingsTab: CaseIterable {
         switch self {
         case .general: Strings.general
         case .alerts: Strings.alerts
-        case .claude: Strings.claudeSection
+        case .claude: Strings.agentsSection
         }
     }
 
@@ -106,48 +106,76 @@ private struct AlertSettings: View {
 
 private struct ClaudeSettings: View {
     @ObservedObject var prefs: Preferences
-    // Built without Xcode, so no @State macro: State is used directly.
-    private let connected = State(initialValue: ClaudeHooks.isConnected)
-    private let failed = State(initialValue: false)
 
     var body: some View {
         SettingsForm {
             Section {
-                HStack(spacing: 12) {
-                    Image(nsImage: CritterIcon.badge)
-                        .resizable().interpolation(.none)
-                        .frame(width: 26, height: 26)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(Strings.claudeSection)
-                        HStack(spacing: 5) {
-                            Circle().fill(connected.wrappedValue ? Color.green : Color.secondary.opacity(0.6)).frame(width: 7, height: 7)
-                            Text(failed.wrappedValue ? Strings.claudeHooksError
-                                 : connected.wrappedValue ? Strings.claudeConnected : Strings.claudeNotConnected)
-                        }
-                        .font(.footnote)
-                        .foregroundStyle(failed.wrappedValue ? Color.red : .secondary)
-                    }
-                    Spacer()
-                    Button(connected.wrappedValue ? Strings.claudeDisconnect : Strings.claudeConnect) {
-                        do {
-                            if connected.wrappedValue { try ClaudeHooks.disconnect() } else { try ClaudeHooks.connect() }
-                            failed.wrappedValue = false
-                        } catch {
-                            failed.wrappedValue = true
-                        }
-                        connected.wrappedValue = ClaudeHooks.isConnected
-                    }
-                }
+                AgentConnection(title: Strings.claudeSection, badge: CritterIcon.badge, connectedText: Strings.claudeConnected,
+                                errorText: Strings.claudeHooksError, isConnected: { ClaudeHooks.isConnected },
+                                connect: ClaudeHooks.connect, disconnect: ClaudeHooks.disconnect)
+                toggle($prefs.claudeAlerts, Strings.claudeAlerts, Strings.claudeAlertsDetail)
             } footer: {
                 footnote(Strings.claudeHooksFooter)
             }
             Section {
-                toggle($prefs.claudeAlerts, Strings.claudeAlerts, Strings.claudeAlertsDetail)
+                AgentConnection(title: Strings.codexSection, badge: PomponIcon.badge, connectedText: Strings.codexConnected,
+                                errorText: Strings.codexHooksError, isConnected: { CodexHooks.isConnected },
+                                notInstalled: CodexHooks.isInstalled ? nil : Strings.codexNotInstalled,
+                                connect: CodexHooks.connect, disconnect: CodexHooks.disconnect)
+                toggle($prefs.codexAlerts, Strings.codexAlerts, Strings.codexAlertsDetail)
+            } footer: {
+                footnote(Strings.codexHooksFooter)
+            }
+            Section {
                 toggle($prefs.claudeApprove, Strings.claudeApprove, Strings.claudeApproveDetail)
-                    .disabled(!prefs.claudeAlerts)
+                    .disabled(!prefs.claudeAlerts && !prefs.codexAlerts)
             }
         }
-        .onAppear { connected.wrappedValue = ClaudeHooks.isConnected }
+    }
+}
+
+/// Badge, name, connection state and the Connect / Disconnect button.
+private struct AgentConnection: View {
+    let title: String
+    let badge: NSImage
+    let connectedText: String
+    let errorText: String
+    let isConnected: () -> Bool
+    var notInstalled: String? = nil
+    let connect: () throws -> Void
+    let disconnect: () throws -> Void
+    // Built without Xcode, so no @State macro: State is used directly.
+    private let connected = State(initialValue: false)
+    private let failed = State(initialValue: false)
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(nsImage: badge)
+                .resizable().interpolation(.high)
+                .frame(width: 26, height: 26)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                HStack(spacing: 5) {
+                    Circle().fill(connected.wrappedValue ? Color.green : Color.secondary.opacity(0.6)).frame(width: 7, height: 7)
+                    Text(failed.wrappedValue ? errorText
+                         : connected.wrappedValue ? connectedText : notInstalled ?? Strings.claudeNotConnected)
+                }
+                .font(.footnote)
+                .foregroundStyle(failed.wrappedValue ? Color.red : .secondary)
+            }
+            Spacer()
+            Button(connected.wrappedValue ? Strings.claudeDisconnect : Strings.claudeConnect) {
+                do {
+                    if connected.wrappedValue { try disconnect() } else { try connect() }
+                    failed.wrappedValue = false
+                } catch {
+                    failed.wrappedValue = true
+                }
+                connected.wrappedValue = isConnected()
+            }
+            .disabled(notInstalled != nil && !connected.wrappedValue)
+        }
+        .onAppear { connected.wrappedValue = isConnected() }
     }
 }
 
@@ -162,6 +190,7 @@ private func footnote(_ text: String) -> some View {
     Text(text)
         .font(.footnote)
         .foregroundStyle(.secondary)
+        .multilineTextAlignment(.leading)
         .frame(maxWidth: .infinity, alignment: .leading)
 }
 
@@ -213,6 +242,8 @@ final class SettingsTabsController: NSTabViewController {
         for tab in SettingsTab.allCases {
             let host = NSHostingController(rootView: AnyView(tab.view(prefs)))
             host.sizingOptions = []
+            // The toolbar tab controller titles the window after the selected child.
+            host.title = tab.title
             let item = NSTabViewItem(viewController: host)
             item.label = tab.title
             item.image = tab.image
@@ -277,3 +308,28 @@ final class SettingsWindow {
         return w
     }
 }
+
+/// The pompom on a lavender tile, for Settings.
+enum PomponIcon {
+    static let badge: NSImage = NSImage(size: NSSize(width: 26, height: 26), flipped: true) { rect in
+        NSColor(red: 143 / 255, green: 157 / 255, blue: 1, alpha: 1).setFill()
+        NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7).fill()
+        // Fuzzy white oval with two lavender eyes.
+        let body = NSBezierPath()
+        let n = 72, cx = 13.0, cy = 14.0
+        for i in 0..<n {
+            let a = Double(i) / Double(n) * 2 * .pi
+            let r = 1 + 0.05 * sin(a * 23) + 0.04 * sin(a * 41)
+            let e = 2.0 / 2.4, c = cos(a), s = sin(a)
+            let p = NSPoint(x: cx + 8.6 * r * copysign(pow(abs(c), e), c), y: cy + 7.2 * r * copysign(pow(abs(s), e), s))
+            if i == 0 { body.move(to: p) } else { body.line(to: p) }
+        }
+        body.close()
+        NSColor.white.setFill()
+        body.fill()
+        NSColor(red: 143 / 255, green: 157 / 255, blue: 1, alpha: 1).setFill()
+        for x in [10.0, 16.0] { NSBezierPath(ovalIn: NSRect(x: x - 1.1, y: 12.0, width: 2.2, height: 3.4)).fill() }
+        return true
+    }
+}
+

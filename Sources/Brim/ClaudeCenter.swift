@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Turns hook events into notch alerts and picks which one shows:
+/// Turns Claude Code and Codex hook events into notch alerts and picks which one shows:
 /// permission > question > error > waiting > finished.
 @MainActor
 final class ClaudeCenter {
@@ -40,7 +40,10 @@ final class ClaudeCenter {
     }
 
     func refresh() {
-        if prefs.claudeAlerts { bridge.start() } else { stopAll() }
+        if prefs.codexAlerts { CodexHooks.upgradeIfNeeded() }
+        if prefs.claudeAlerts || prefs.codexAlerts { bridge.start() } else { stopAll() }
+        entries.filter { !($0.notice.agent == .codex ? prefs.codexAlerts : prefs.claudeAlerts) }.forEach { remove($0.notice.id, publish: false) }
+        publish()
     }
 
     private func stopAll() {
@@ -53,6 +56,9 @@ final class ClaudeCenter {
     // MARK: - Events
 
     private func handle(_ event: ClaudeIncoming, reply: ClaudeReply?) {
+        let enabled = event.agent == .codex ? prefs.codexAlerts : prefs.claudeAlerts
+        guard enabled else { reply?.pass(); return }
+        if event.agent == .codex { handleCodex(event, reply: reply); return }
         switch event.name {
         case "UserPromptSubmit":
             turnStart[event.session] = Date()
@@ -119,6 +125,40 @@ final class ClaudeCenter {
         }
     }
 
+    /// Codex sends fewer events: no questions, idle notices or failures, and its approval prompt
+    /// only appears after this hook lets go (see `focus`).
+    private func handleCodex(_ event: ClaudeIncoming, reply: ClaudeReply?) {
+        switch event.name {
+        case "UserPromptSubmit":
+            turnStart[event.session] = Date()
+            dismiss(session: event.session)
+        case "PermissionRequest":
+            let input = event.json["tool_input"] as? [String: Any] ?? [:]
+            let (title, detail, code) = Self.describeCodex(tool: event.string("tool_name") ?? "", input: input)
+            var reply = reply
+            if !prefs.claudeApprove { reply?.pass(); reply = nil }
+            add(event, .permission(title: title, detail: detail, code: code), reply: reply, hideAfter: reply == nil ? Self.doneDuration : Self.pendingLimit)
+        case "PreToolUse" where (event.string("tool_name") ?? "").hasPrefix("request_user_input"):
+            // request_user_input has Claude's shape; request_user_input_async uses "title" and plain-text options.
+            let input = event.json["tool_input"] as? [String: Any] ?? [:]
+            let kind = Self.question(input)
+            var reply = reply
+            if !prefs.claudeApprove || (Self.questionFits(kind) == false) { reply?.pass(); reply = nil }
+            add(event, kind, reply: reply, hideAfter: Self.pendingLimit)
+        case "Stop":
+            let minutes = turnStart.removeValue(forKey: event.session).map { Int(Date().timeIntervalSince($0) / 60) }
+            add(event, .done(summary: Self.summary(of: event.string("last_assistant_message") ?? ""), minutes: (minutes ?? 0) >= 1 ? minutes : nil),
+                hideAfter: Self.doneDuration)
+        default:
+            reply?.pass()
+        }
+    }
+
+    private static func questionFits(_ kind: ClaudeNotice.Kind) -> Bool {
+        if case .question(let q) = kind { return q.fitsNotch }
+        return false
+    }
+
     /// The transcript where the result will appear: the session's, or a subagent's
     /// (<session>/subagents/agent-<id>.jsonl).
     private static func transcript(of event: ClaudeIncoming) -> String? {
@@ -136,10 +176,12 @@ final class ClaudeCenter {
     private static func question(_ input: [String: Any]) -> ClaudeNotice.Kind {
         let all = input["questions"] as? [[String: Any]] ?? []
         let first = all.first ?? [:]
-        let options = (first["options"] as? [[String: Any]] ?? []).compactMap { o in
-            (o["label"] as? String).map { ClaudeQuestion.Option(label: $0, detail: o["description"] as? String ?? "") }
+        let options = (first["options"] as? [Any] ?? []).compactMap { o -> ClaudeQuestion.Option? in
+            if let text = o as? String { return ClaudeQuestion.Option(label: text, detail: "") }
+            guard let o = o as? [String: Any], let label = o["label"] as? String else { return nil }
+            return ClaudeQuestion.Option(label: label, detail: o["description"] as? String ?? "")
         }
-        return .question(ClaudeQuestion(text: first["question"] as? String ?? "", options: options,
+        return .question(ClaudeQuestion(text: first["question"] as? String ?? first["title"] as? String ?? "", options: options,
                                         multi: first["multiSelect"] as? Bool ?? false, count: all.count))
     }
 
@@ -157,6 +199,7 @@ final class ClaudeCenter {
                      watch: Bool = false, hideAfter: TimeInterval? = nil) {
         dismiss(session: event.session, publish: false)
         var notice = ClaudeNotice(session: event.session, project: event.project, kind: kind, hostName: Self.hostName(event.host))
+        notice.agent = event.agent
         notice.answerable = reply != nil
         var entry = Entry(notice: notice, reply: reply, host: event.host, tty: event.tty, input: input)
         let id = notice.id
@@ -204,9 +247,13 @@ final class ClaudeCenter {
         entries[i].reply = nil
         entries[i].watch?.cancel()
         reply.onGone = nil
-        var updated = entries[i].input
-        updated["answers"] = [question.text: labels.joined(separator: ", ")]
-        reply.allow(updatedInput: updated)
+        if entries[i].notice.agent == .codex {
+            reply.answerCodex(question: question.text, labels: labels)
+        } else {
+            var updated = entries[i].input
+            updated["answers"] = [question.text: labels.joined(separator: ", ")]
+            reply.allow(updatedInput: updated)
+        }
         entries[i].notice.answered = (true, Date())
         entries[i].notice.chosen = labels
         publish(animated: false)
@@ -219,6 +266,13 @@ final class ClaudeCenter {
         let before = NSWorkspace.shared.frontmostApplication?.localizedName ?? "-"
         Self.trace("focus: \(entry.notice.kind) host=\(entry.host?.localizedName ?? "none") tty=\(entry.tty ?? "-") pid=\(entry.host?.processIdentifier ?? 0) terminated=\(entry.host?.isTerminated ?? true) front=\(before)")
         if let host = entry.host { Self.bringForward(host, project: entry.notice.project, tty: entry.tty) }
+        if entry.notice.agent == .codex {
+            // Codex shows its approval prompt or question only once the hook lets go.
+            switch entry.notice.kind {
+            case .permission, .question: remove(id); return
+            default: break
+            }
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             Self.trace("focus: then front=\(NSWorkspace.shared.frontmostApplication?.localizedName ?? "-")")
         }
@@ -297,6 +351,36 @@ final class ClaudeCenter {
             let name = (parts.count >= 3 ? parts[2...].joined(separator: "__") : tool).replacingOccurrences(of: "_", with: " ")
             let detail = input["description"] as? String ?? (parts.count >= 3 ? parts[1] : input.values.compactMap { $0 as? String }.first ?? "")
             return (String(format: Strings.claudePermissionFor, name), detail, false)
+        }
+    }
+
+    static func describeCodex(tool: String, input: [String: Any]) -> (String, String, Bool) {
+        let command = input["command"] as? String ?? (input["command"] as? [String])?.joined(separator: " ") ?? ""
+        switch tool {
+        case "Bash":
+            let line = command.split(separator: "\n").first.map(String.init) ?? ""
+            return (String(format: Strings.claudePermissionFor, "Bash"), line, true)
+        case "apply_patch", "Edit", "Write":
+            // *** Add File: path / *** Update File: path / *** Delete File: path, then +/- lines.
+            let lines = command.split(separator: "\n", omittingEmptySubsequences: false)
+            var files: [(String, Bool)] = []
+            var added = 0, removed = 0
+            for line in lines {
+                for (prefix, isNew) in [("*** Add File: ", true), ("*** Update File: ", false), ("*** Delete File: ", false)] where line.hasPrefix(prefix) {
+                    files.append(((String(line.dropFirst(prefix.count)) as NSString).lastPathComponent, isNew))
+                }
+                if line.hasPrefix("+"), !line.hasPrefix("+++") { added += 1 }
+                if line.hasPrefix("-"), !line.hasPrefix("---") { removed += 1 }
+            }
+            let title = files.count > 1 ? String(format: Strings.codexEditFiles, files.count)
+                : files.first.map { String(format: $0.1 ? Strings.claudeCreate : Strings.claudeEdit, $0.0) } ?? String(format: Strings.claudeEdit, "files")
+            let detail = files.count == 1 && files[0].1 ? String(format: Strings.claudeNewLines, added) : String(format: Strings.claudeLines, added, removed)
+            return (title, detail, false)
+        default:
+            if let description = input["description"] as? String, !description.isEmpty {
+                return (String(format: Strings.claudePermissionFor, tool.components(separatedBy: "__").last ?? tool), description, false)
+            }
+            return describe(tool: tool, input: input)
         }
     }
 
@@ -429,6 +513,7 @@ final class ClaudeCenter {
         case "com.microsoft.VSCode": return "VS Code"
         case "com.microsoft.VSCodeInsiders": return "VS Code Insiders"
         case "com.googlecode.iterm2": return "iTerm"
+        case "com.openai.codex": return "Codex"
         default: return app.localizedName
         }
     }

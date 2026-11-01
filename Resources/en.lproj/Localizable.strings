@@ -98,3 +98,14 @@
 "settings.claudeDisconnect" = "Disconnect";
 "settings.claudeHooksFooter" = "Brim adds its hooks to ~/.claude/settings.json and keeps a backup next to it.";
 "settings.claudeHooksError" = "Couldn’t update ~/.claude/settings.json";
+"settings.agents" = "Agents";
+"settings.codex" = "Codex";
+"codex.editFiles" = "Edit %d files";
+"settings.codexAlerts" = "Codex Alerts";
+"settings.codexAlertsDetail" = "Permissions and finished replies.";
+"settings.codexConnected" = "Connected · Codex app and CLI";
+"settings.codexNotInstalled" = "Codex isn’t installed";
+"settings.codexHooksFooter" = "Brim adds its hooks to ~/.codex/hooks.json and marks them as reviewed in config.toml, with a backup of each. Click an alert to answer in Codex instead.";
+"settings.codexHooksError" = "Couldn’t update ~/.codex";
+"settings.answer" = "Answering";
+"codex.asks" = "Codex is asking";

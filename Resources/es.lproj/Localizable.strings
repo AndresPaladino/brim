@@ -98,3 +98,14 @@
 "settings.claudeDisconnect" = "Desconectar";
 "settings.claudeHooksFooter" = "Brim agrega sus hooks a ~/.claude/settings.json y deja una copia de seguridad al lado.";
 "settings.claudeHooksError" = "No se pudo actualizar ~/.claude/settings.json";
+"settings.agents" = "Agentes";
+"settings.codex" = "Codex";
+"codex.editFiles" = "Editar %d archivos";
+"settings.codexAlerts" = "Avisos de Codex";
+"settings.codexAlertsDetail" = "Permisos y respuestas terminadas.";
+"settings.codexConnected" = "Conectado · App de Codex y CLI";
+"settings.codexNotInstalled" = "Codex no está instalado";
+"settings.codexHooksFooter" = "Brim agrega sus hooks a ~/.codex/hooks.json y los marca como revisados en config.toml, con copia de seguridad de cada uno. Tocá un aviso para contestar en Codex.";
+"settings.codexHooksError" = "No se pudo actualizar ~/.codex";
+"settings.answer" = "Respuestas";
+"codex.asks" = "Codex te pregunta";

@@ -17,7 +17,7 @@ struct ClaudeQuestion: Equatable {
     }
 }
 
-/// A Claude Code alert in the notch.
+/// A Claude Code or Codex alert in the notch.
 struct ClaudeNotice: Identifiable, Equatable {
     enum Kind: Equatable {
         /// code: the detail is a command or URL, shown in monospace.
@@ -29,6 +29,7 @@ struct ClaudeNotice: Identifiable, Equatable {
     }
 
     let id = UUID()
+    var agent: Agent = .claude
     let session: String
     let project: String
     let kind: Kind
@@ -67,6 +68,8 @@ struct ClaudeNotice: Identifiable, Equatable {
         }
     }
     var earDot: Bool { priority >= 3 }
+
+    var asks: String { agent == .codex ? Strings.codexAsks : Strings.claudeAsks }
 
     /// Opens on hover. Errors stay in the ear.
     var expandable: Bool { if case .error = kind { false } else { true } }
@@ -313,11 +316,13 @@ enum CritterDrawing {
     }
 }
 
-/// Redraw every 90 ms while moving (sprite-like steps), then only on blinks and glances.
+/// Redraw every `tick` ms while moving (90 for the pixel critter's sprite-like steps, a display
+/// frame for the smooth pompom), then only on blinks and glances.
 struct CritterSchedule: TimelineSchedule {
     let start: Date
     let active: Double
     let idleFrom: Double?
+    var tick: Double = 90
 
     func entries(from startDate: Date, mode: TimelineScheduleMode) -> AnyIterator<Date> {
         // Never return a past date: SwiftUI treats it as overdue and asks again every frame.
@@ -339,7 +344,10 @@ struct CritterSchedule: TimelineSchedule {
 
     func nextChange(after r: Double) -> Double? {
         if r < active {
-            let tick = ((r / 90).rounded(.down) + 1) * 90
+            // Always strictly after r: with a fractional tick (1000 / 60) rounding can land on r itself,
+            // and repeating a date makes SwiftUI spin on this schedule forever.
+            var tick = ((r / self.tick).rounded(.down) + 1) * self.tick
+            if tick <= r { tick += self.tick }
             if tick < active { return tick }
             if active.isFinite { return active }
             return nil
@@ -364,17 +372,20 @@ struct CritterSchedule: TimelineSchedule {
 struct CritterView: View {
     let unit: CGFloat
     let motion: CritterMotion
+    var agent: Agent = .claude
     // Built without Xcode, so no @State macro: State is used directly.
     private let startState = State(initialValue: Date())
 
     var body: some View {
         let start = startState.wrappedValue
-        TimelineView(CritterSchedule(start: start, active: motion.active, idleFrom: motion.idleFrom)) { ctx in
+        let smooth = agent == .codex
+        TimelineView(CritterSchedule(start: start, active: motion.active, idleFrom: motion.idleFrom, tick: smooth ? 1000 / 60 : 90)) { ctx in
             let raw = SnapshotRenderer.isActive ? SnapshotRenderer.faceTime : ctx.date.timeIntervalSince(start) * 1000
-            let ms = raw < motion.active ? (raw / 90).rounded(.down) * 90 : raw
+            let ms = raw < motion.active && !smooth ? (raw / 90).rounded(.down) * 90 : raw
             Canvas { gc, _ in
                 CritterDrawing.frames += 1
-                CritterDrawing.draw(motion.pose(ms, start: start), in: gc, unit: unit)
+                let pose = motion.pose(ms, start: start)
+                if smooth { PomponDrawing.draw(pose, at: ms, in: gc, unit: unit) } else { CritterDrawing.draw(pose, in: gc, unit: unit) }
             }
         }
         .frame(width: 22 * unit, height: 20 * unit)
@@ -405,7 +416,7 @@ struct ClaudeEarContent: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            CritterView(unit: ClaudeLayout.earUnit, motion: motion)
+            CritterView(unit: ClaudeLayout.earUnit, motion: motion, agent: notice.agent)
                 .id(notice.id)
             Spacer(minLength: 0)
             if showsLabel {
@@ -414,7 +425,7 @@ struct ClaudeEarContent: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .foregroundStyle(isError ? Color(red: 1, green: 0.54, blue: 0.5) : .white.opacity(0.62))
-                    if notice.earDot { Circle().fill(CritterDrawing.clay).frame(width: 6, height: 6) }
+                    if notice.earDot { Circle().fill(notice.agent.tint).frame(width: 6, height: 6) }
                 }
                 .font(Font(ClaudeLayout.earFont))
                 .frame(maxWidth: ClaudeLayout.earWidth(notice) - 18, alignment: .trailing)
@@ -434,7 +445,7 @@ struct ClaudeOpenContent: View {
 
     var body: some View {
         content
-            // The whole drop goes to Claude's window; the ✕ / ✓ buttons take precedence.
+            // The whole drop goes to the agent's window; the ✕ / ✓ buttons take precedence.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
             .onTapGesture(perform: focus)
@@ -446,7 +457,7 @@ struct ClaudeOpenContent: View {
             switch notice.kind {
             case .permission(let title, let detail, let code):
                 row {
-                    CritterView(unit: ClaudeLayout.unit, motion: .ask(answered: notice.answered?.allow, at: notice.answered?.at))
+                    CritterView(unit: ClaudeLayout.unit, motion: .ask(answered: notice.answered?.allow, at: notice.answered?.at), agent: notice.agent)
                     texts(Text(title), Text("\(notice.project) · ") + Text(detail).font(code ? .system(size: 11.5, design: .monospaced) : .system(size: 12)))
                     if let answered = notice.answered {
                         Label(answered.allow ? Strings.claudeAllowed : Strings.claudeDenied,
@@ -468,10 +479,10 @@ struct ClaudeOpenContent: View {
                 let text = question.text, options = question.options.map(\.label)
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 12) {
-                        CritterView(unit: 2.5, motion: .wait)
+                        CritterView(unit: 2.5, motion: .wait, agent: notice.agent)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(text).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white).lineLimit(2)
-                            Text("\(notice.project) · \(Strings.claudeAsks)").font(.system(size: 12)).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
+                            Text("\(notice.project) · \(notice.asks)").font(.system(size: 12)).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
                         }
                         .padding(.leading, 6)
                     }
@@ -498,7 +509,7 @@ struct ClaudeOpenContent: View {
                 .onTapGesture(perform: focus)
             case .done(let summary, let minutes):
                 row {
-                    CritterView(unit: ClaudeLayout.unit, motion: .happy)
+                    CritterView(unit: ClaudeLayout.unit, motion: .happy, agent: notice.agent)
                     let meta = [notice.project, minutes.map { String(format: Strings.claudeMinutes, $0) }].compactMap { $0 }.joined(separator: " · ")
                     VStack(alignment: .leading, spacing: 1) {
                         (Text(Strings.claudeDone) + Text("  \(meta)").font(.system(size: 12, weight: .medium)).foregroundColor(.white.opacity(0.5)))
@@ -512,14 +523,14 @@ struct ClaudeOpenContent: View {
                 }
             case .waiting:
                 row {
-                    CritterView(unit: ClaudeLayout.unit, motion: .wait)
+                    CritterView(unit: ClaudeLayout.unit, motion: .wait, agent: notice.agent)
                     texts(Text(Strings.claudeWaiting) + Text("  \(notice.project)").font(.system(size: 12, weight: .medium)).foregroundColor(.white.opacity(0.5)),
                           Text(Strings.claudeWaitingDetail))
                     chevron
                 }
             case .error(let message):
                 row {
-                    CritterView(unit: ClaudeLayout.unit, motion: .sad)
+                    CritterView(unit: ClaudeLayout.unit, motion: .sad, agent: notice.agent)
                     texts(Text(Strings.claudeError), Text(message))
                 }
             }
@@ -582,7 +593,7 @@ private struct QuestionList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
-                CritterView(unit: 2.5, motion: answered ? .happy : .wait)
+                CritterView(unit: 2.5, motion: answered ? .happy : .wait, agent: notice.agent)
                     .padding(.top, 3)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(question.text)
@@ -627,7 +638,7 @@ private struct QuestionList: View {
 
     private var subtitle: String {
         if let chosen = notice.chosen { return String(format: Strings.claudeAnswered, chosen.joined(separator: ", ")) }
-        return "\(notice.project) · \(Strings.claudeAsks)"
+        return "\(notice.project) · \(notice.asks)"
     }
 
     private func row(_ i: Int, _ option: ClaudeQuestion.Option) -> some View {

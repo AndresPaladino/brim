@@ -15,6 +15,20 @@ enum SnapshotRenderer {
         if let i = args.firstIndex(of: "--render-readme"), i + 1 < args.count {
             renderReadme(to: args[i + 1]); return true
         }
+        if let i = args.firstIndex(of: "--codex-hooks"), i + 1 < args.count {
+            // --codex-hooks connect|disconnect|status (use BRIM_CODEX_HOME to test on a copy)
+            do {
+                switch args[i + 1] {
+                case "connect": try CodexHooks.connect()
+                case "disconnect": try CodexHooks.disconnect()
+                default: break
+                }
+                print(CodexHooks.isConnected ? "conectado" : "sin conectar")
+            } catch {
+                print("error: \(error)")
+            }
+            return true
+        }
         if let i = args.firstIndex(of: "--claude-hooks"), i + 1 < args.count {
             // --claude-hooks connect|disconnect|status (use BRIM_CLAUDE_SETTINGS to test on a copy)
             do {
@@ -56,7 +70,7 @@ enum SnapshotRenderer {
             renderCharge(to: args[i + 1], kind: i + 2 < args.count ? args[i + 2] : "full"); return true
         }
         if let i = args.firstIndex(of: "--render-claude"), i + 1 < args.count {
-            // --render-claude <png> <kind> [open] [ms] [music] [external] [noapprove] [yes|no] [project=…]
+            // --render-claude <png> <kind> [open] [ms] [music] [external] [noapprove] [yes|no] [codex] [project=…]
             renderClaude(to: args[i + 1], options: Array(args[(i + 2)...])); return true
         }
         if let i = args.firstIndex(of: "--render-external"), i + 1 < args.count {
@@ -268,6 +282,7 @@ enum SnapshotRenderer {
         case "edit": perm(ClaudeCenter.describe(tool: "Edit", input: ["file_path": "/x/NotchController.swift", "old_string": "a\nb\nc", "new_string": "a\nb\nc\nd\ne"]))
         case "write": perm(ClaudeCenter.describe(tool: "Write", input: ["file_path": "/x/ClaudeIntegrationTestsForTheNotchIsland.swift", "content": "1\n2\n3"]))
         case "web": perm(ClaudeCenter.describe(tool: "WebFetch", input: ["url": "https://developer.apple.com/documentation/appkit/nspanel"]))
+        case "patch": perm(ClaudeCenter.describeCodex(tool: "apply_patch", input: ["command": "*** Begin Patch\n*** Update File: Sources/Brim/NotchController.swift\n@@\n-a\n+b\n+c\n*** Update File: Sources/Brim/IslandView.swift\n@@\n+d\n*** End Patch"]))
         case "mcp": perm(ClaudeCenter.describe(tool: "mcp__claude_ai_Google_Calendar__create_event", input: ["description": "Create event: Networks midterm"]))
         case "question": .question(ClaudeQuestion(text: "Which style should the notch character use?", options: [
             .init(label: "Pixel", detail: "Hard edges, like the terminal one"), .init(label: "Smooth", detail: "Rounded corners"),
@@ -282,6 +297,8 @@ enum SnapshotRenderer {
         case "question-wide": .question(ClaudeQuestion(text: "De las 20 ideas para el personaje de Codex, ¿cuáles te gustan más, aunque sea por un solo detalle?", options: [
             .init(label: "Animales", detail: "Gato, Búho, Pingüino, Rana, Pollito o Pececito"), .init(label: "Criaturas flotantes", detail: "Fantasmita, Medusa, Murciélago o Abejita"),
             .init(label: "Objetos con cara", detail: "Foquito, Engranaje, Planetita, Hongo o Cactus"), .init(label: "Bichos raros", detail: "Slime, Cíclope, Pulpito, Mariquita o Nube de lluvia")], multi: true, count: 1))
+        case "codex-question": .question(ClaudeQuestion(text: "Favorite color?", options: [
+            .init(label: "Blue (Recommended)", detail: "Matches the pompom"), .init(label: "Red", detail: "Matches Claude")], multi: false, count: 1))
         case "done": .done(summary: ClaudeCenter.summary(of: "Done.\n\nFixed the progress bar bounce and ran the tests: all 48 pass."), minutes: 4)
         case "done-long": .done(summary: ClaudeCenter.summary(of: "All done.\n\n```swift\nlet x = 1\n```\n\nI went through the 11 files, updated the Spanish and English strings, added the Settings section with its two toggles and tested the hook installer on a copy of your config. Do you want me to install it now or review the diff first?"), minutes: 37)
         case "done-short": .done(summary: ClaudeCenter.summary(of: "Done."), minutes: nil)
@@ -291,7 +308,8 @@ enum SnapshotRenderer {
         default: perm(ClaudeCenter.describe(tool: "Bash", input: ["command": "npm run build && swift test"]))
         }
         let project = options.first { $0.hasPrefix("project=") }.map { String($0.dropFirst(8)) } ?? "brim"
-        var notice = ClaudeNotice(session: "s", project: project, kind: kind, hostName: "VS Code")
+        var notice = ClaudeNotice(session: "s", project: project, kind: kind, hostName: has("codex") ? "Codex" : "VS Code")
+        if has("codex") { notice.agent = .codex }
         notice.answerable = !has("noapprove")
         if has("yes") || has("no") { notice.answered = (has("yes"), Date().addingTimeInterval(-0.15)) }
         // chosen=A,B: question already answered with those options.

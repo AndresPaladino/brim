@@ -118,4 +118,17 @@ enum Strings {
     static var claudeDisconnect: String { t("settings.claudeDisconnect") }
     static var claudeHooksFooter: String { t("settings.claudeHooksFooter") }
     static var claudeHooksError: String { t("settings.claudeHooksError") }
+
+    // Codex
+    static var agentsSection: String { t("settings.agents") }
+    static var codexSection: String { t("settings.codex") }
+    static var codexEditFiles: String { t("codex.editFiles") }
+    static var codexAsks: String { t("codex.asks") }
+    static var codexAlerts: String { t("settings.codexAlerts") }
+    static var codexAlertsDetail: String { t("settings.codexAlertsDetail") }
+    static var codexConnected: String { t("settings.codexConnected") }
+    static var codexNotInstalled: String { t("settings.codexNotInstalled") }
+    static var codexHooksFooter: String { t("settings.codexHooksFooter") }
+    static var codexHooksError: String { t("settings.codexHooksError") }
+    static var answerTitle: String { t("settings.answer") }
 }

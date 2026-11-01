@@ -1,5 +1,6 @@
 import AppKit
 import Darwin
+import SwiftUI
 
 /// Debug commands (scripts/dev/brimctl) and click logging. Off unless enabled with:
 ///   defaults write com.andrespaladino.brim debugTools -bool YES
@@ -7,8 +8,17 @@ enum DebugTools {
     static var enabled: Bool { UserDefaults.standard.bool(forKey: "debugTools") }
 }
 
-/// An event from Resources/claude-hook.sh.
+/// Who sent the event. Codex's hook (Resources/codex-hook.sh) tags its events with "brim_agent".
+enum Agent: String {
+    case claude, codex
+
+    var name: String { self == .claude ? "Claude" : "Codex" }
+    var tint: Color { self == .claude ? CritterDrawing.clay : PomponDrawing.lavender }
+}
+
+/// An event from Resources/claude-hook.sh or Resources/codex-hook.sh.
 struct ClaudeIncoming {
+    let agent: Agent
     let name: String
     let session: String
     let cwd: String
@@ -26,7 +36,7 @@ struct ClaudeIncoming {
     }
 }
 
-/// Receives Claude Code hook events over a local Unix socket.
+/// Receives Claude Code and Codex hook events over a local Unix socket.
 @MainActor
 final class ClaudeBridge {
     static let socketPath = FileManager.default.homeDirectoryForCurrentUser
@@ -96,9 +106,11 @@ final class ClaudeBridge {
     private func received(_ line: Data, host: NSRunningApplication?, tty: String?, conn: ClaudeConnection) {
         guard let json = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
               let name = json["hook_event_name"] as? String else { conn.finish(nil); return }
-        let event = ClaudeIncoming(name: name, session: json["session_id"] as? String ?? "",
+        let agent = Agent(rawValue: json["brim_agent"] as? String ?? "") ?? .claude
+        let event = ClaudeIncoming(agent: agent, name: name, session: json["session_id"] as? String ?? "",
                                    cwd: json["cwd"] as? String ?? "", json: json, host: host, tty: tty)
-        if name == "PermissionRequest" {
+        // Codex questions arrive as PreToolUse and wait for an answer too.
+        if name == "PermissionRequest" || (agent == .codex && name == "PreToolUse") {
             onEvent?(event, ClaudeReply(conn))
         } else {
             conn.finish(nil)
@@ -135,7 +147,8 @@ final class ClaudeBridge {
     }
 }
 
-/// Answer to a permission request, sent once. `onGone` fires if Claude Code stops waiting.
+/// Answer to a permission request, sent once. `onGone` fires if the agent stops waiting.
+/// Claude Code and Codex read the same shape.
 @MainActor
 final class ClaudeReply {
     private let conn: ClaudeConnection
@@ -151,6 +164,16 @@ final class ClaudeReply {
     func deny() { send(["behavior": "deny", "message": "The user denied this from the notch (Brim)."]) }
     /// No decision: Claude Code shows its own prompt.
     func pass() { conn.finish(nil) }
+
+    /// Answers a Codex question. Codex hooks can't fill in the answer, so the call is blocked with the
+    /// answer as the reason, which the model reads as the result (tested: it continues with it).
+    func answerCodex(question: String, labels: [String]) {
+        let reason = "The user answered this question from the notch (Brim) instead of the Codex window. "
+            + "Their answer to \"\(question)\" is: \(labels.joined(separator: ", ")). Continue with that answer; don't ask again."
+        let out: [String: Any] = ["hookSpecificOutput": ["hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason]]
+        let data = (try? JSONSerialization.data(withJSONObject: out)) ?? Data()
+        conn.finish(data + Data("\n".utf8))
+    }
 
     private func send(_ decision: [String: Any]) {
         let out: [String: Any] = ["hookSpecificOutput": ["hookEventName": "PermissionRequest", "decision": decision]]

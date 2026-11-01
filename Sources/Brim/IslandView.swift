@@ -223,13 +223,13 @@ struct IslandView: View {
                         ))
                 }
                 if let recording = model.recording, mode == .recording {
-                    RecordingEars(recording: recording, claudeDot: model.claude != nil, notchHeight: notch.height)
+                    RecordingEars(recording: recording, claudeDot: model.claude?.agent.tint, notchHeight: notch.height)
                         .frame(width: size.width)
                         .transition(.opacity.animation(.smooth(duration: 0.2)))
                 }
                 if model.claude != nil, mode == .media {
                     // A Claude alert arrived while the player is open: show a dot, keep the player.
-                    Circle().fill(CritterDrawing.clay).frame(width: 7, height: 7)
+                    Circle().fill(model.claude?.agent.tint ?? CritterDrawing.clay).frame(width: 7, height: 7)
                         .padding(.trailing, 46)
                         .frame(width: size.width, height: notch.height, alignment: .trailing)
                         .transition(.opacity)
@@ -261,7 +261,8 @@ struct IslandView: View {
 
 struct RecordingEars: View {
     let recording: ScreenRecording
-    let claudeDot: Bool
+    /// Color of the agent's dot, when one has an alert.
+    let claudeDot: Color?
     let notchHeight: CGFloat
 
     static let red = Color(red: 1, green: 0.27, blue: 0.23)
@@ -273,7 +274,7 @@ struct RecordingEars: View {
     }
 
     var body: some View {
-        let earWidth = IslandLayout.recordingEarWidth(claude: claudeDot)
+        let earWidth = IslandLayout.recordingEarWidth(claude: claudeDot != nil)
         HStack(spacing: 0) {
             Group {
                 if recording.stoppable {
@@ -288,7 +289,7 @@ struct RecordingEars: View {
             .frame(width: earWidth)
             Spacer(minLength: 0)
             HStack(spacing: 5) {
-                if claudeDot { Circle().fill(CritterDrawing.clay).frame(width: 6, height: 6) }
+                if let claudeDot { Circle().fill(claudeDot).frame(width: 6, height: 6) }
                 // One redraw per second. Text(timerInterval:) used about 0.5% CPU constantly.
                 TimelineView(.periodic(from: recording.start, by: 1)) { ctx in
                     Text(Self.elapsed(since: recording.start, at: ctx.date))

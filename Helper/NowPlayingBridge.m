@@ -39,7 +39,8 @@ static void emit(NSDictionary *obj) {
 }
 
 static NSString *string(id v) { return [v isKindOfClass:NSString.class] ? v : @""; }
-static NSNumber *number(id v) { return [v isKindOfClass:NSNumber.class] ? v : @0; }
+// NaN or infinity (live streams report them) would make NSJSONSerialization throw and kill the bridge.
+static NSNumber *number(id v) { return [v isKindOfClass:NSNumber.class] && isfinite([v doubleValue]) ? v : @0; }
 
 static void refresh(void) {
     dispatch_group_t g = dispatch_group_create();

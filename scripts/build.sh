@@ -27,7 +27,7 @@ cp Resources/AppIcon.icns Resources/Assets.car "$APP/Contents/Resources/"
 clang -dynamiclib -fobjc-arc -O2 -Wall -arch arm64 -arch x86_64 -framework Foundation \
   Helper/NowPlayingBridge.m -o "$APP/Contents/Resources/NowPlayingBridge.dylib"
 cp Helper/NowPlayingBridge.pl "$APP/Contents/Resources/"
-cp Resources/claude-hook.sh "$APP/Contents/Resources/"
+cp Resources/claude-hook.sh Resources/codex-hook.sh "$APP/Contents/Resources/"
 
 xattr -cr "$APP"
 

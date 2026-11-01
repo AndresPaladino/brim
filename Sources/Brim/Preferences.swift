@@ -27,8 +27,9 @@ final class Preferences: ObservableObject {
     }
     var onScreenRecordingChange: (() -> Void)?
     @Published var claudeAlerts: Bool { didSet { defaults.set(claudeAlerts, forKey: "claudeAlerts"); onClaudeChange?() } }
-    /// Answer Claude Code permissions and questions from the notch.
+    /// Answer Claude Code and Codex permissions, and Claude's questions, from the notch.
     @Published var claudeApprove: Bool { didSet { defaults.set(claudeApprove, forKey: "claudeApprove") } }
+    @Published var codexAlerts: Bool { didSet { defaults.set(codexAlerts, forKey: "codexAlerts"); onClaudeChange?() } }
     var onClaudeChange: (() -> Void)?
     /// Mirrors the actual login item state.
     @Published var openAtLogin: Bool {
@@ -43,7 +44,7 @@ final class Preferences: ObservableObject {
         defaults.register(defaults: [
             "displays": DisplayChoice.all.rawValue, "openOnHover": true, "volumeHUD": true,
             "mediaAtRest": true, "deviceAlerts": true, "lowBattery": true, "chargeAlerts": true, "macLowBattery": true, "screenRecording": true,
-            "claudeAlerts": true, "claudeApprove": true,
+            "claudeAlerts": true, "claudeApprove": true, "codexAlerts": true,
         ])
         displays = DisplayChoice(rawValue: defaults.string(forKey: "displays") ?? "") ?? .all
         openOnHover = defaults.bool(forKey: "openOnHover")
@@ -56,6 +57,7 @@ final class Preferences: ObservableObject {
         screenRecording = defaults.bool(forKey: "screenRecording")
         claudeAlerts = defaults.bool(forKey: "claudeAlerts")
         claudeApprove = defaults.bool(forKey: "claudeApprove")
+        codexAlerts = defaults.bool(forKey: "codexAlerts")
         openAtLogin = LoginItem.isEnabled
     }
 }
