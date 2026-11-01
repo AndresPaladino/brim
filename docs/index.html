@@ -672,12 +672,13 @@ document.querySelector('.npc').addEventListener('click', e => { const b = e.targ
 const pick = fn => { user(); closeMenu(); setTimeout(fn, 140); };
 document.querySelectorAll('[data-out]').forEach(r => r.addEventListener('click', () => pick(DO[r.dataset.out])));
 $('plug').addEventListener('click', () => pick(DO.charge));
-// Sliders: drag or click anywhere on the track.
+// Sliders: drag or click anywhere on the track. The drop would land on the menu, so it shows once you let go.
 document.querySelectorAll('.sl').forEach(sl => {
   const kind = sl.dataset.sl;
   const at = e => { const r = sl.getBoundingClientRect(); hudSet(kind, (e.clientX - r.left) / r.width, true); };
   sl.addEventListener('pointerdown', e => { user(); sl.setPointerCapture(e.pointerId); at(e); });
   sl.addEventListener('pointermove', e => { if (sl.hasPointerCapture(e.pointerId)) at(e); });
+  sl.addEventListener('lostpointercapture', () => pick(() => show('hud', 1600)));
   sl.addEventListener('keydown', e => { const d = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[e.key]; if (d) { e.preventDefault(); user(); hudSet(kind, st[kind === 'volume' ? 'vol' : 'bright'] + d / 16, true); } });
 });
 // The demo uses the same menu bar: the icon lights up while it acts.
