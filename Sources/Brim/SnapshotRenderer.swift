@@ -51,7 +51,8 @@ enum SnapshotRenderer {
         if let i = args.firstIndex(of: "--render-onboarding"), i + 1 < args.count {
             let name = i + 2 < args.count ? args[i + 2] : "welcome"
             let step: OnboardingModel.Step = switch name {
-            case "access": .accessibility; case "bt": .bluetooth; case "conflict": .conflict("MediaMate"); case "done": .done; default: .welcome }
+            case "access": .accessibility; case "bt": .bluetooth; case "conflict": .conflict("MediaMate"); case "notch": .notch
+            case "features": .features; case "agents": .agents; case "done": .done; default: .welcome }
             let host = NSHostingView(rootView: OnboardingView(model: OnboardingModel(snapshot: step)))
             let w = NSWindow(contentRect: NSRect(origin: .zero, size: host.fittingSize), styleMask: [.titled], backing: .buffered, defer: false)
             w.contentView = host

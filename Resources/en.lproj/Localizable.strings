@@ -48,10 +48,17 @@
 "onb.conflictText" = "Two apps can’t handle the volume keys at the same time.";
 "onb.quitApp" = "Quit %@";
 "onb.doneTitle" = "You’re All Set";
-"onb.doneText" = "Try changing the volume, playing music, or clicking the notch.";
+"onb.doneText" = "Try changing the volume, playing music, or opening the notch.";
 "onb.getStarted" = "Get Started";
 "onb.later" = "Not Now";
 "onb.waiting" = "Waiting…";
+"onb.notchTitle" = "How Do You Open It?";
+"onb.notchText" = "The notch opens to show your music, audio output, and devices.";
+"onb.featuresTitle" = "What Do You Want to See?";
+"onb.featuresText" = "Click to turn each alert on or off.";
+"onb.agentsTitle" = "Claude Code and Codex";
+"onb.agentsText" = "Permissions, questions, and finished replies in the notch, so you can answer without switching windows.";
+"onb.rightClick" = "Right-click the notch to come back to these settings anytime.";
 "settings.welcome" = "Welcome Screen";
 "settings.showWelcome" = "Show…";
 

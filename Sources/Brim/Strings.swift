@@ -64,6 +64,13 @@ enum Strings {
     static var onbGetStarted: String { t("onb.getStarted") }
     static var onbLater: String { t("onb.later") }
     static var onbWaiting: String { t("onb.waiting") }
+    static var onbNotchTitle: String { t("onb.notchTitle") }
+    static var onbNotchText: String { t("onb.notchText") }
+    static var onbFeaturesTitle: String { t("onb.featuresTitle") }
+    static var onbFeaturesText: String { t("onb.featuresText") }
+    static var onbAgentsTitle: String { t("onb.agentsTitle") }
+    static var onbAgentsText: String { t("onb.agentsText") }
+    static var onbRightClick: String { t("onb.rightClick") }
 
     // Charging
     static var charging: String { t("charge.charging") }

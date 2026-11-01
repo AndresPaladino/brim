@@ -135,7 +135,7 @@ private struct ClaudeSettings: View {
 }
 
 /// Badge, name, connection state and the Connect / Disconnect button.
-private struct AgentConnection: View {
+struct AgentConnection: View {
     let title: String
     let badge: NSImage
     let connectedText: String

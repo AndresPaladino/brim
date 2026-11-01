@@ -48,10 +48,17 @@
 "onb.conflictText" = "Dos apps no pueden manejar las teclas de volumen a la vez.";
 "onb.quitApp" = "Cerrar %@";
 "onb.doneTitle" = "Todo listo";
-"onb.doneText" = "Probá cambiar el volumen, poner música o hacer clic en el notch.";
+"onb.doneText" = "Probá cambiar el volumen, poner música o abrir el notch.";
 "onb.getStarted" = "Empezar";
 "onb.later" = "Más tarde";
 "onb.waiting" = "Esperando…";
+"onb.notchTitle" = "¿Cómo lo abrís?";
+"onb.notchText" = "El notch se abre para mostrar la música, la salida de audio y tus dispositivos.";
+"onb.featuresTitle" = "¿Qué querés ver?";
+"onb.featuresText" = "Tocá para activar o desactivar cada aviso.";
+"onb.agentsTitle" = "Claude Code y Codex";
+"onb.agentsText" = "Permisos, preguntas y respuestas terminadas en el notch, para contestar sin cambiar de ventana.";
+"onb.rightClick" = "Hacé clic derecho en el notch para volver a estos ajustes cuando quieras.";
 "settings.welcome" = "Pantalla de bienvenida";
 "settings.showWelcome" = "Mostrar…";
 

@@ -10,6 +10,8 @@ enum ClaudeHooks {
         if let path = ProcessInfo.processInfo.environment["BRIM_CLAUDE_SETTINGS"] { return URL(fileURLWithPath: path) }
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/settings.json")
     }
+    /// Claude Code keeps its settings in ~/.claude.
+    static var isInstalled: Bool { FileManager.default.fileExists(atPath: settingsURL.deletingLastPathComponent().path) }
     private static var backupURL: URL { settingsURL.appendingPathExtension("brim-backup") }
 
     private static var hookCommand: String? {
