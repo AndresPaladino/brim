@@ -6,5 +6,19 @@
     <link>https://andrespaladino.github.io/brim/appcast.xml</link>
     <language>en</language>
     <!-- items -->
+    <item>
+      <title>Brim 1.3</title>
+      <pubDate>Sun, 01 Nov 2026 16:31:13 +0000</pubDate>
+      <sparkle:version>4</sparkle:version>
+      <sparkle:shortVersionString>1.3</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+      <ul>
+        <li>Brim updates itself: it checks for new versions once a day, and you can right-click the notch and choose Check for Updates. Turn on Install Updates Automatically in Settings to skip the prompt.</li>
+        <li>The welcome screen now sets up how the notch opens, which alerts you see, and the Claude Code and Codex connection, and shows that right-clicking the notch opens Settings.</li>
+      </ul>
+      ]]></description>
+      <enclosure url="https://github.com/AndresPaladino/brim/releases/download/v1.3/Brim.zip" type="application/octet-stream" sparkle:edSignature="/aRnK04OlmabGa3Ll7QJYdcW6cak+SUD6DLTXicWfTAeEQCyaNzr5rgzBEbgmhQi8H1u7jMWhIo3shcgjWdnBQ==" length="4238346"/>
+    </item>
   </channel>
 </rss>
