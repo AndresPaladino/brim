@@ -48,10 +48,15 @@ final class AudioDeviceMonitor {
         guard Self.uint(id, kAudioDevicePropertyTransportType) == kAudioDeviceTransportTypeBluetooth,
               let event = describe(id, status: .lowBattery), let battery = event.battery else { return nil }
         let uid = Self.string(id, kAudioDevicePropertyDeviceUID) ?? event.name
-        if battery > 20 { lowBatteryAlerted.remove(uid); return nil }
-        guard battery <= 10, !lowBatteryAlerted.contains(uid) else { return nil }
-        lowBatteryAlerted.insert(uid)
-        return event
+        return Self.shouldAlertLowBattery(battery, uid: uid, alerted: &lowBatteryAlerted) ? event : nil
+    }
+
+    /// Alerts once at 10 % or less per device; charging above 20 % rearms it.
+    static func shouldAlertLowBattery(_ battery: Int, uid: String, alerted: inout Set<String>) -> Bool {
+        if battery > 20 { alerted.remove(uid); return false }
+        guard battery <= 10, !alerted.contains(uid) else { return false }
+        alerted.insert(uid)
+        return true
     }
 
     // MARK: - Events

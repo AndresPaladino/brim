@@ -4,7 +4,7 @@ import Foundation
 final class Preferences: ObservableObject {
     static let shared = Preferences()
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
 
     var onDisplaysChange: (() -> Void)?
     var onMediaAtRestChange: (() -> Void)?
@@ -40,7 +40,9 @@ final class Preferences: ObservableObject {
         }
     }
 
-    private init() {
+    /// Tests pass their own suite; the app always uses `shared`.
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         defaults.register(defaults: [
             "displays": DisplayChoice.all.rawValue, "openOnHover": true, "volumeHUD": true,
             "mediaAtRest": true, "deviceAlerts": true, "lowBattery": true, "chargeAlerts": true, "macLowBattery": true, "screenRecording": true,

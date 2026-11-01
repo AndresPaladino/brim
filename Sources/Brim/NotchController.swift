@@ -6,32 +6,22 @@ import SwiftUI
 final class NotchController {
     private let model = IslandModel()
     private let prefs = Preferences.shared
+    private lazy var presenter = IslandPresenter(model: model, prefs: prefs)
     private var windows: [IslandWindow] = []
 
-    private static let hudDuration: TimeInterval = 1.6
     private var keyTap: MediaKeyTap?
     private var accessibilityObserver: NSObjectProtocol?
-    private var hudHide: DispatchWorkItem?
-
-    /// After pausing, the artwork stays next to the notch this long.
-    private static let pausedLinger: TimeInterval = 30
     private let nowPlaying = NowPlayingService()
-
-    private static let deviceDuration: TimeInterval = 3.2
     private let audioDevices = AudioDeviceMonitor()
-    private var deviceHide: DispatchWorkItem?
-    private var pausedHide: DispatchWorkItem?
-
     private let fullscreen = FullscreenMonitor()
     private let power = PowerMonitor()
-    private var chargeHide: DispatchWorkItem?
     private lazy var claude = ClaudeCenter(model: model)
     private let recording = ScreenRecordingMonitor()
 
     init() {
         rebuildWindows()
         prefs.onDisplaysChange = { [weak self] in self?.rebuildWindows() }
-        prefs.onMediaAtRestChange = { [weak self] in self?.updateMediaVisibility() }
+        prefs.onMediaAtRestChange = { [weak self] in self?.presenter.updateMediaVisibility() }
         IslandMenu.shared.onOpenSettings = { [weak self] in self?.collapseAll() }
 
         keyTap = MediaKeyTap { [weak self] key, fine in
@@ -39,31 +29,24 @@ final class NotchController {
         }
         startKeyTap()
 
-        model.perform = { [weak self] in self?.perform($0) }
+        presenter.onLayoutChange = { [weak self] in self?.windows.forEach { $0.refreshHotRect() } }
+        presenter.closePlayer = { [weak self] in self?.windows.filter { $0.screen.expanded && !$0.screen.expandedClaude }.forEach { $0.setExpanded(false) } }
+        presenter.sendMedia = { [weak self] in self?.nowPlaying.send($0) }
+        presenter.openPlayingApp = { [weak self] in self?.openPlayingApp() }
+        model.perform = { [weak self] in self?.presenter.perform($0) }
         nowPlaying.onChange = { [weak self] in self?.nowPlayingChanged($0) }
         nowPlaying.start()
 
         audioDevices.onConnect = { [weak self] event in
             guard let self, self.prefs.deviceAlerts else { return }
-            self.showDevice(event)
+            self.presenter.showDevice(event)
         }
         audioDevices.start()
 
         fullscreen.onChange = { [weak self] _ in self?.applyFullscreen() }
         fullscreen.start()
 
-        power.onEvent = { [weak self] event in
-            guard let self else { return }
-            if case .low = event {} else if !self.prefs.chargeAlerts { return }
-            switch event {
-            case .plugged(let pct, let full): self.showCharge(ChargeEvent(kind: full ? .charged : .plugged, percent: pct))
-            case .unplugged(let pct): self.showCharge(ChargeEvent(kind: .unplugged, percent: pct))
-            case .full(let pct): self.showCharge(ChargeEvent(kind: .full, percent: pct))
-            case .low(let pct):
-                guard self.prefs.macLowBattery else { return }
-                self.showCharge(ChargeEvent(kind: .low, percent: pct))
-            }
-        }
+        power.onEvent = { [weak self] in self?.presenter.power($0) }
         power.start()
 
         recording.onChange = { [weak self] _ in self?.applyRecording() }
@@ -94,7 +77,7 @@ final class NotchController {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
                 let visual: AudioDeviceEvent.Visual = DeviceArtwork.buds(productID: 0x2027)
                     .map { .buds(left: $0.left, right: $0.right) } ?? .symbol("airpods.pro")
-                self?.showDevice(AudioDeviceEvent(name: "Andres’s AirPods Pro 3", status: .connected, battery: 76, visual: visual))
+                self?.presenter.showDevice(AudioDeviceEvent(name: "Andres’s AirPods Pro 3", status: .connected, battery: 76, visual: visual))
             }
         }
     }
@@ -108,7 +91,7 @@ final class NotchController {
         windows.forEach { $0.close() }
         windows = targets.map { IslandWindow(metrics: $0, model: model) }
         windows.forEach {
-            $0.onBoop = { [weak self] in self?.boop() }
+            $0.onBoop = { [weak self] in self?.presenter.boop() }
             $0.onClaudeClick = { [weak self] in if let id = self?.model.claude?.id { self?.claudeFocus(id) } }
             $0.onStopRecording = { [weak self] in self?.recording.stop() }
         }
@@ -133,74 +116,10 @@ final class NotchController {
     // MARK: - Now Playing
 
     private func nowPlayingChanged(_ incoming: NowPlaying?) {
-        let np = correctingStaleSeek(incoming)
-        let old = model.nowPlaying
-        let appearing = old == nil || old?.trackID != np?.trackID
-        withAnimation(appearing ? .snappy : .smooth) { model.nowPlaying = np }
         // Check headphone battery on track changes instead of waking up just for it.
-        if appearing, np != nil, prefs.lowBattery, let low = audioDevices.lowBatteryEvent() { showDevice(low) }
-        if np == nil { collapseAll() }
-        // On displays without a notch the hover area depends on whether something is playing.
-        if (old == nil) != (np == nil) { windows.forEach { $0.refreshHotRect() } }
-
-        updateMediaVisibility()
-    }
-
-    private func updateMediaVisibility() {
-        pausedHide?.cancel()
-        guard prefs.mediaAtRest, let np = model.nowPlaying else { setMediaVisible(false); return }
-        if np.playing {
-            setMediaVisible(true)
-        } else if model.mediaVisible {
-            let work = DispatchWorkItem { [weak self] in self?.setMediaVisible(false) }
-            pausedHide = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + Self.pausedLinger, execute: work)
+        if presenter.nowPlayingChanged(incoming), prefs.lowBattery, let low = audioDevices.lowBatteryEvent() {
+            presenter.showDevice(low)
         }
-    }
-
-    private func setMediaVisible(_ visible: Bool) {
-        guard model.mediaVisible != visible else { return }
-        withAnimation(visible ? .snappy : .smooth) { model.mediaVisible = visible }
-        windows.forEach { $0.refreshHotRect() }
-    }
-
-    /// After a seek, MediaRemote can report the old position for a moment. Ignore mismatches meanwhile.
-    private var pendingSeek: (target: Double, at: Date)?
-
-    private func correctingStaleSeek(_ incoming: NowPlaying?) -> NowPlaying? {
-        guard var np = incoming, let seek = pendingSeek else { return incoming }
-        let now = Date()
-        let age = now.timeIntervalSince(seek.at)
-        guard age < 2, np.trackID == model.nowPlaying?.trackID else { pendingSeek = nil; return incoming }
-        let expected = seek.target + (np.playing ? age : 0)
-        if abs(np.position(at: now) - expected) > 1.5 {
-            np.elapsed = expected
-            np.timestamp = now
-        } else {
-            pendingSeek = nil
-        }
-        return np
-    }
-
-    private func perform(_ command: MediaCommand) {
-        if case .openApp = command { openPlayingApp(); return }
-        nowPlaying.send(command)
-        // Update the UI right away; MediaRemote confirms shortly after.
-        guard var np = model.nowPlaying else { return }
-        let now = Date()
-        switch command {
-        case .togglePlayPause:
-            np.elapsed = np.position(at: now)
-            np.timestamp = now
-            np.playing.toggle()
-        case .seek(let t):
-            pendingSeek = (t, now)
-            np.elapsed = t
-            np.timestamp = now
-        case .next, .previous, .openApp:
-            return
-        }
-        withAnimation(.snappy) { model.nowPlaying = np }
     }
 
     // MARK: - Claude Code
@@ -231,10 +150,12 @@ final class NotchController {
             }
         case "hover":
             for window in windows {
+                window.debugPinned = true
                 if model.claude?.expandable == true { window.setExpanded(true, claude: true) }
                 else if model.nowPlaying != nil { window.setExpanded(true) }
             }
         case "leave":
+            windows.forEach { $0.debugPinned = false }
             collapseAll()
         case "focus":
             if let id = model.claude?.id { claudeFocus(id) }
@@ -250,16 +171,16 @@ final class NotchController {
             // hud volume|brightness <0-1>
             let args = parts.count > 1 ? parts[1].split(separator: " ") : []
             let level = args.count > 1 ? Double(args[1]) ?? 0.5 : 0.5
-            showHUD(HUDState(kind: args.first == "brightness" ? .brightness : .volume, level: level), bump: false)
+            presenter.showHUD(HUDState(kind: args.first == "brightness" ? .brightness : .volume, level: level), bump: false)
         case "device":
             let buds = DeviceArtwork.buds(productID: 0x2027).map { AudioDeviceEvent.Visual.buds(left: $0.left, right: $0.right) }
-            showDevice(AudioDeviceEvent(name: "AirPods Pro", status: .connected, battery: 76, visual: buds ?? .symbol("airpods.pro")))
+            presenter.showDevice(AudioDeviceEvent(name: "AirPods Pro", status: .connected, battery: 76, visual: buds ?? .symbol("airpods.pro")))
         case "charge":
             let kind: ChargeEvent.Kind = switch parts.count > 1 ? parts[1] : "" {
             case "full": .full; case "unplugged": .unplugged; case "low": .low; default: .plugged }
-            showCharge(ChargeEvent(kind: kind, percent: kind == .low ? 10 : kind == .full ? 80 : 64))
+            presenter.showCharge(ChargeEvent(kind: kind, percent: kind == .low ? 10 : kind == .full ? 80 : 64))
         case "boop":
-            boop()
+            presenter.boop()
         case "music":
             // music on|off: a sample track with drawn artwork, nothing real playing needed.
             if parts.count > 1, parts[1] == "on" {
@@ -267,19 +188,17 @@ final class NotchController {
                                       timestamp: Date(), rate: 1, playing: true, appName: "Music", bundleID: nil,
                                       artwork: SnapshotRenderer.sampleArtwork, accent: Color(red: 1, green: 0.62, blue: 0.42))
                 withAnimation(.snappy) { model.nowPlaying = song }
-                setMediaVisible(true)
+                presenter.setMediaVisible(true)
             } else {
-                collapseAll()
-                setMediaVisible(false)
-                withAnimation(.smooth) { model.nowPlaying = nil }
+                presenter.nowPlayingChanged(nil) // as when the real music stops
             }
             windows.forEach { $0.refreshHotRect() }
         case "media":
             // media toggle|next|prev: controls whatever is playing, like the player buttons.
             switch parts.count > 1 ? parts[1] : "" {
-            case "next": perform(.next)
-            case "prev": perform(.previous)
-            default: perform(.togglePlayPause)
+            case "next": presenter.perform(.next)
+            case "prev": presenter.perform(.previous)
+            default: presenter.perform(.togglePlayPause)
             }
         case "rec":
             // Fake recording, to test the timer without recording.
@@ -287,10 +206,67 @@ final class NotchController {
             withAnimation(.snappy) { model.recording = arg == "off" ? nil : ScreenRecording(start: Date(), stoppable: arg != "other") }
             windows.forEach { $0.refreshHotRect() }
         case "stats":
+            // stats [reset]: frames drawn by the critter, the pompom and the face since launch (or the last reset).
             let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Caches/brim-build/snapshots").path
-            try? "\(CritterDrawing.frames)\n".write(toFile: "\(dir)/frames.txt", atomically: true, encoding: .utf8)
+            try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+            if parts.count > 1, parts[1] == "reset" { CritterDrawing.frames = 0; FaceDrawing.frames = 0 }
+            try? "critter=\(CritterDrawing.frames) face=\(FaceDrawing.frames)\n".write(toFile: "\(dir)/frames.txt", atomically: true, encoding: .utf8)
+        case "state":
+            // state: everything scripts/test/e2e needs to check, as JSON in snapshots/state.json.
+            writeState()
+        case "answer":
+            // answer allow|deny: like clicking ✓ or ✕ on the current alert.
+            if let id = model.claude?.id { claude.answer(id, allow: parts.count > 1 && parts[1] == "allow") }
+        case "choose":
+            // choose <label>[,<label>]: picks options of the current question.
+            if let id = model.claude?.id, parts.count > 1 { claude.choose(id, labels: parts[1].components(separatedBy: ",")) }
+        case "click":
+            // click: a click on the notch of the first display (boop, open, or jump to the terminal).
+            windows.first?.debugClick()
         default:
             break
+        }
+    }
+
+    private func writeState() {
+        let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Caches/brim-build/snapshots")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let claudeKind: String? = model.claude.map {
+            switch $0.kind {
+            case .permission: "permission"
+            case .question: "question"
+            case .done: "done"
+            case .waiting: "waiting"
+            case .error: "error"
+            }
+        }
+        var usage = rusage_info_current()
+        let rss = withUnsafeMutablePointer(to: &usage) {
+            $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(getpid(), RUSAGE_INFO_CURRENT, $0) }
+        } == 0 ? Int(usage.ri_phys_footprint) : -1
+        let state: [String: Any] = [
+            "windows": windows.map { w in [
+                "mode": "\(w.screen.mode(of: model))", "open": w.screen.expanded, "openClaude": w.screen.expandedClaude,
+                "fullscreen": w.screen.fullscreen, "display": Int(w.metrics.displayID), "notch": w.metrics.geometry.hasNotch,
+            ] as [String: Any] },
+            "hud": model.hud.map { "\($0.kind) \($0.level) muted=\($0.muted)" } ?? NSNull(),
+            "device": model.device?.name ?? NSNull(),
+            "charge": model.charge.map { "\($0.kind)" } ?? NSNull(),
+            "boop": model.boop.map { $0.annoyed ? "annoyed" : "boop" } ?? NSNull(),
+            "claude": claudeKind ?? NSNull(),
+            "claudeSession": model.claude?.session ?? NSNull(),
+            "claudeAnswerable": model.claude?.answerable ?? false,
+            "recording": model.recording.map { $0.stoppable ? "macOS" : "other" } ?? NSNull(),
+            "music": model.nowPlaying.map { "\($0.title)" } ?? NSNull(),
+            "playing": model.nowPlaying?.playing ?? false,
+            "mediaVisible": model.mediaVisible,
+            "stretch": Double(model.stretch),
+            "footprintBytes": rss,
+            "bridgePID": nowPlaying.bridgePID ?? -1,
+            "frames": ["critter": CritterDrawing.frames, "face": FaceDrawing.frames],
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: state, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: dir.appendingPathComponent("state.json"), options: .atomic)
         }
     }
 
@@ -314,49 +290,7 @@ final class NotchController {
     // MARK: - Boop
 
     /// The face waves at the end of onboarding.
-    func greet() { boop() }
-
-    private var boopClicks: [Date] = []
-    private var boopHide: DispatchWorkItem?
-
-    /// Clicking the notch with nothing playing. Three clicks within 1.5 s make the face annoyed.
-    private func boop() {
-        let now = Date()
-        boopClicks = boopClicks.filter { now.timeIntervalSince($0) < 1.5 } + [now]
-        let annoyed = boopClicks.count >= 3
-        if annoyed { boopClicks = [] }
-        withAnimation(model.boop == nil ? .snappy : .smooth) { model.boop = BoopEvent(annoyed: annoyed) }
-        boopHide?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            withAnimation(.smooth) { self?.model.boop = nil }
-        }
-        boopHide = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + (annoyed ? 1.55 : 1.95), execute: work)
-    }
-
-    // MARK: - Charging
-
-    private func showCharge(_ event: ChargeEvent) {
-        withAnimation(model.charge == nil ? .snappy : .smooth) { model.charge = event }
-        chargeHide?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            withAnimation(.smooth) { self?.model.charge = nil }
-        }
-        chargeHide = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + (event.kind == .full ? 3.6 : 3.2), execute: work)
-    }
-
-    // MARK: - Audio devices
-
-    private func showDevice(_ event: AudioDeviceEvent) {
-        withAnimation(model.device == nil ? .snappy : .smooth) { model.device = event }
-        deviceHide?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            withAnimation(.smooth) { self?.model.device = nil }
-        }
-        deviceHide = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.deviceDuration, execute: work)
-    }
+    func greet() { presenter.boop() }
 
     private func openPlayingApp() {
         guard let id = model.nowPlaying?.bundleID,
@@ -390,62 +324,23 @@ final class NotchController {
         accessibilityObserver = nil
     }
 
-    /// 1/16 steps like macOS, 1/64 with Option + Shift.
-    private static func stepped(_ value: Float, up: Bool, fine: Bool) -> Float {
-        let steps: Float = fine ? 64 : 16
-        let next = (value * steps).rounded() + (up ? 1 : -1)
-        return min(1, max(0, next / steps))
-    }
-
     private func handle(_ key: MediaKey, fine: Bool) -> Bool {
         guard prefs.volumeHUD else { return false }
         switch key {
         case .volumeUp, .volumeDown, .mute:
             guard SystemVolume.isControllable else { return false }
-            var muted = SystemVolume.isMuted
-            let old = SystemVolume.volume
-            var level = old
-            var atLimit = false
-            if key == .mute {
-                muted.toggle()
-                SystemVolume.isMuted = muted
-            } else {
-                let up = key == .volumeUp
-                level = Self.stepped(old, up: up, fine: fine)
-                atLimit = level == old && !(up && muted)
-                SystemVolume.volume = level
-                // Like macOS: volume up unmutes, reaching 0 mutes.
-                let shouldMute = !up && level == 0
-                if muted != shouldMute { muted = shouldMute; SystemVolume.isMuted = muted }
-            }
-            showHUD(HUDState(kind: .volume, level: Double(level), muted: muted), bump: atLimit)
+            let change = IslandPresenter.volumeChange(key, volume: SystemVolume.volume, muted: SystemVolume.isMuted, fine: fine)
+            if let volume = change.setVolume { SystemVolume.volume = volume }
+            if let muted = change.setMuted { SystemVolume.isMuted = muted }
+            presenter.showHUD(HUDState(kind: .volume, level: Double(change.level), muted: change.muted), bump: change.atLimit)
 
         case .brightnessUp, .brightnessDown:
             guard DisplayBrightness.isControllable else { return false }
             let old = DisplayBrightness.brightness
-            let level = Self.stepped(old, up: key == .brightnessUp, fine: fine)
+            let level = IslandPresenter.stepped(old, up: key == .brightnessUp, fine: fine)
             DisplayBrightness.brightness = level
-            showHUD(HUDState(kind: .brightness, level: Double(level)), bump: level == old)
+            presenter.showHUD(HUDState(kind: .brightness, level: Double(level)), bump: level == old)
         }
         return true
-    }
-
-    private func showHUD(_ state: HUDState, bump: Bool) {
-        withAnimation(model.hud == nil ? .snappy : .spring(duration: 0.28, bounce: 0)) { model.hud = state }
-        if bump { bumpLimit() }
-        hudHide?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            withAnimation(.smooth) { self?.model.hud = nil }
-        }
-        hudHide = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.hudDuration, execute: work)
-    }
-
-    /// Stretches the island a little when a key hits the limit.
-    private func bumpLimit() {
-        withAnimation(.spring(duration: 0.14, bounce: 0)) { model.stretch = 14 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.09) { [weak self] in
-            withAnimation(.spring(duration: 0.5, bounce: 0.45)) { self?.model.stretch = 0 }
-        }
     }
 }

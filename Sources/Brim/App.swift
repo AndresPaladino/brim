@@ -25,6 +25,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // One Brim at a time: a second one would draw a second island and tap the keys twice.
+        // Opening it again goes to the running one, which shows Settings (see above).
+        if let other = Self.otherInstance() {
+            NSWorkspace.shared.openApplication(at: other.bundleURL ?? Bundle.main.bundleURL, configuration: NSWorkspace.OpenConfiguration()) { _, _ in
+                DispatchQueue.main.async { NSApp.terminate(nil) }
+            }
+            return
+        }
         controller = NotchController()
         OnboardingWindow.shared.onFinished = { [weak self] in self?.controller?.greet() }
         if OnboardingWindow.shouldShow { OnboardingWindow.shared.show() }
@@ -35,5 +43,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.controller?.reposition() }
         }
+    }
+
+    private static func otherInstance() -> NSRunningApplication? {
+        guard let id = Bundle.main.bundleIdentifier else { return nil }
+        let me = ProcessInfo.processInfo.processIdentifier
+        return NSRunningApplication.runningApplications(withBundleIdentifier: id).first { $0.processIdentifier != me && !$0.isTerminated }
     }
 }

@@ -72,15 +72,15 @@
 "claude.create" = "Crear %@";
 "claude.open" = "Abrir %@";
 "claude.search" = "Buscar en la web";
-"claude.lines" = "+%d −%d líneas";
-"claude.newLines" = "%d líneas";
+"claude.lines" = "+%ld −%ld líneas";
+"claude.newLines" = "%ld líneas";
 "claude.done" = "Listo";
 "claude.error" = "Error";
 "claude.waiting" = "Claude te espera";
 "claude.waitingDetail" = "Terminó y espera tu respuesta";
 "claude.asks" = "Claude te pregunta";
 "claude.answerIn" = "Responder en %@ ›";
-"claude.minutes" = "%d min";
+"claude.minutes" = "%ld min";
 "claude.allow" = "Permitir";
 "claude.deny" = "Rechazar";
 "settings.claude" = "Claude Code";
@@ -111,7 +111,7 @@
 "settings.claudeHooksError" = "No se pudo actualizar ~/.claude/settings.json";
 "settings.agents" = "Agentes";
 "settings.codex" = "Codex";
-"codex.editFiles" = "Editar %d archivos";
+"codex.editFiles" = "Editar %ld archivos";
 "settings.codexAlerts" = "Avisos de Codex";
 "settings.codexAlertsDetail" = "Permisos y respuestas terminadas.";
 "settings.codexConnected" = "Conectado · App de Codex y CLI";

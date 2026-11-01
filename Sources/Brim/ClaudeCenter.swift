@@ -5,9 +5,10 @@ import SwiftUI
 /// permission > question > error > waiting > finished.
 @MainActor
 final class ClaudeCenter {
-    private let bridge = ClaudeBridge()
+    private let bridge: ClaudeBridge
     private let model: IslandModel
-    private let prefs = Preferences.shared
+    private let prefs: Preferences
+    private let scheduler: Scheduler
 
     var onChange: (() -> Void)?
     /// While an alert is open on screen it doesn't time out.
@@ -17,7 +18,7 @@ final class ClaudeCenter {
         var notice: ClaudeNotice
         var reply: ClaudeReply?
         var watch: TranscriptWatch?
-        var hide: DispatchWorkItem?
+        var hide: Scheduled?
         var host: NSRunningApplication?
         var tty: String?
         /// Original tool input, needed to answer AskUserQuestion.
@@ -34,9 +35,12 @@ final class ClaudeCenter {
     private static let waitingDuration: TimeInterval = 15 * 60
     private static let pendingLimit: TimeInterval = 30 * 60
 
-    init(model: IslandModel) {
+    init(model: IslandModel, bridge: ClaudeBridge? = nil, prefs: Preferences? = nil, scheduler: Scheduler? = nil) {
         self.model = model
-        bridge.onEvent = { [weak self] event, reply in self?.handle(event, reply: reply) }
+        self.bridge = bridge ?? ClaudeBridge()
+        self.prefs = prefs ?? .shared
+        self.scheduler = scheduler ?? MainScheduler.shared
+        self.bridge.onEvent = { [weak self] event, reply in self?.handle(event, reply: reply) }
     }
 
     func refresh() {
@@ -56,12 +60,16 @@ final class ClaudeCenter {
     // MARK: - Events
 
     private func handle(_ event: ClaudeIncoming, reply: ClaudeReply?) {
+        // Without an id, an event is its own session: two agents that both omit it would otherwise
+        // dismiss each other's alerts.
+        var event = event
+        if event.session.isEmpty { event.session = "unknown-\(UUID().uuidString)" }
         let enabled = event.agent == .codex ? prefs.codexAlerts : prefs.claudeAlerts
         guard enabled else { reply?.pass(); return }
         if event.agent == .codex { handleCodex(event, reply: reply); return }
         switch event.name {
         case "UserPromptSubmit":
-            turnStart[event.session] = Date()
+            turnStart[event.session] = scheduler.now
             announcedDone.remove(event.session)
             dismiss(session: event.session)
         case "SessionEnd":
@@ -88,8 +96,9 @@ final class ClaudeCenter {
                 // terminal; whichever answers first wins.
                 var reply = reply
                 if !prefs.claudeApprove { reply?.pass(); reply = nil }
-                if let i = entries.firstIndex(where: { $0.notice.session == event.session && $0.notice.priority == 3 }) {
-                    // The alert already came through PreToolUse.
+                if let i = entries.firstIndex(where: { $0.notice.session == event.session && $0.notice.priority == 3 && $0.reply == nil }) {
+                    // The alert already came through PreToolUse. A question that already has a
+                    // connection is a different one: it gets its own alert below.
                     if let reply { attach(reply, input: input, to: i) }
                 } else {
                     add(event, Self.question(input), reply: reply, input: input, watch: true)
@@ -108,7 +117,7 @@ final class ClaudeCenter {
         case "PreToolUse" where event.string("tool_name") == "AskUserQuestion":
             add(event, Self.question(event.json["tool_input"] as? [String: Any] ?? [:]), watch: true)
         case "Stop":
-            let minutes = turnStart.removeValue(forKey: event.session).map { Int(Date().timeIntervalSince($0) / 60) }
+            let minutes = turnStart.removeValue(forKey: event.session).map { Int(scheduler.now.timeIntervalSince($0) / 60) }
             announcedDone.insert(event.session)
             add(event, .done(summary: Self.summary(of: event.string("last_assistant_message") ?? ""), minutes: (minutes ?? 0) >= 1 ? minutes : nil),
                 hideAfter: Self.doneDuration)
@@ -130,7 +139,7 @@ final class ClaudeCenter {
     private func handleCodex(_ event: ClaudeIncoming, reply: ClaudeReply?) {
         switch event.name {
         case "UserPromptSubmit":
-            turnStart[event.session] = Date()
+            turnStart[event.session] = scheduler.now
             dismiss(session: event.session)
         case "PermissionRequest":
             let input = event.json["tool_input"] as? [String: Any] ?? [:]
@@ -146,7 +155,7 @@ final class ClaudeCenter {
             if !prefs.claudeApprove || (Self.questionFits(kind) == false) { reply?.pass(); reply = nil }
             add(event, kind, reply: reply, hideAfter: Self.pendingLimit)
         case "Stop":
-            let minutes = turnStart.removeValue(forKey: event.session).map { Int(Date().timeIntervalSince($0) / 60) }
+            let minutes = turnStart.removeValue(forKey: event.session).map { Int(scheduler.now.timeIntervalSince($0) / 60) }
             add(event, .done(summary: Self.summary(of: event.string("last_assistant_message") ?? ""), minutes: (minutes ?? 0) >= 1 ? minutes : nil),
                 hideAfter: Self.doneDuration)
         default:
@@ -154,14 +163,21 @@ final class ClaudeCenter {
         }
     }
 
-    private static func questionFits(_ kind: ClaudeNotice.Kind) -> Bool {
+    static func isRequest(_ kind: ClaudeNotice.Kind) -> Bool {
+        switch kind {
+        case .permission, .question: true
+        default: false
+        }
+    }
+
+    static func questionFits(_ kind: ClaudeNotice.Kind) -> Bool {
         if case .question(let q) = kind { return q.fitsNotch }
         return false
     }
 
     /// The transcript where the result will appear: the session's, or a subagent's
     /// (<session>/subagents/agent-<id>.jsonl).
-    private static func transcript(of event: ClaudeIncoming) -> String? {
+    static func transcript(of event: ClaudeIncoming) -> String? {
         if let path = event.string("agent_transcript_path") { return (path as NSString).expandingTildeInPath }
         guard let main = event.string("transcript_path") else { return nil }
         if let agent = event.string("agent_id"), !agent.isEmpty {
@@ -173,7 +189,7 @@ final class ClaudeCenter {
         return main
     }
 
-    private static func question(_ input: [String: Any]) -> ClaudeNotice.Kind {
+    static func question(_ input: [String: Any]) -> ClaudeNotice.Kind {
         let all = input["questions"] as? [[String: Any]] ?? []
         let first = all.first ?? [:]
         let options = (first["options"] as? [Any] ?? []).compactMap { o -> ClaudeQuestion.Option? in
@@ -187,7 +203,11 @@ final class ClaudeCenter {
 
     private func attach(_ reply: ClaudeReply, input: [String: Any], to i: Int) {
         let id = entries[i].notice.id
-        entries[i].reply?.pass()
+        if let old = entries[i].reply {
+            // Letting go fires onGone, which would remove the entry while we hold its index.
+            old.onGone = nil
+            old.pass()
+        }
         entries[i].reply = reply
         entries[i].input = input
         entries[i].notice.answerable = true
@@ -197,7 +217,8 @@ final class ClaudeCenter {
 
     private func add(_ event: ClaudeIncoming, _ kind: ClaudeNotice.Kind, reply: ClaudeReply? = nil, input: [String: Any] = [:],
                      watch: Bool = false, hideAfter: TimeInterval? = nil) {
-        dismiss(session: event.session, publish: false)
+        // A request replaces the session's notices but not its other open requests: subagents ask in parallel.
+        dismiss(session: event.session, publish: false, keepRequests: Self.isRequest(kind))
         var notice = ClaudeNotice(session: event.session, project: event.project, kind: kind, hostName: Self.hostName(event.host))
         notice.agent = event.agent
         notice.answerable = reply != nil
@@ -214,8 +235,8 @@ final class ClaudeCenter {
         publish()
     }
 
-    private func scheduleHide(_ id: UUID, after delay: TimeInterval) -> DispatchWorkItem {
-        let work = DispatchWorkItem { [weak self] in
+    private func scheduleHide(_ id: UUID, after delay: TimeInterval) -> Scheduled {
+        scheduler.after(delay) { [weak self] in
             guard let self else { return }
             if self.isOpen(), self.model.claude?.id == id {
                 if let i = self.entries.firstIndex(where: { $0.notice.id == id }) { self.entries[i].hide = self.scheduleHide(id, after: 2) }
@@ -223,8 +244,6 @@ final class ClaudeCenter {
                 self.remove(id)
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
-        return work
     }
 
     // MARK: - Actions from the notch
@@ -235,9 +254,9 @@ final class ClaudeCenter {
         entries[i].watch?.cancel()
         reply.onGone = nil // answering closes the connection; the alert leaves after the animation
         allow ? reply.allow() : reply.deny()
-        entries[i].notice.answered = (allow, Date())
+        entries[i].notice.answered = (allow, scheduler.now)
         publish(animated: false)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { [weak self] in self?.remove(id) }
+        scheduler.after(0.55) { [weak self] in self?.remove(id) }
     }
 
     /// Answers AskUserQuestion: the original questions plus `answers` (multiple labels joined by commas).
@@ -254,10 +273,10 @@ final class ClaudeCenter {
             updated["answers"] = [question.text: labels.joined(separator: ", ")]
             reply.allow(updatedInput: updated)
         }
-        entries[i].notice.answered = (true, Date())
+        entries[i].notice.answered = (true, scheduler.now)
         entries[i].notice.chosen = labels
         publish(animated: false)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in self?.remove(id) }
+        scheduler.after(0.9) { [weak self] in self?.remove(id) }
     }
 
     /// Brings the session's window forward. Informational alerts count as seen.
@@ -293,8 +312,8 @@ final class ClaudeCenter {
 
     // MARK: - List
 
-    private func dismiss(session: String, publish: Bool = true) {
-        let ids = entries.filter { $0.notice.session == session }.map(\.notice.id)
+    private func dismiss(session: String, publish: Bool = true, keepRequests: Bool = false) {
+        let ids = entries.filter { $0.notice.session == session && !(keepRequests && Self.isRequest($0.notice.kind)) }.map(\.notice.id)
         ids.forEach { remove($0, publish: false) }
         if publish, !ids.isEmpty { self.publish() }
     }
@@ -349,7 +368,7 @@ final class ClaudeCenter {
             // MCP tools: mcp__server__tool
             let parts = tool.components(separatedBy: "__")
             let name = (parts.count >= 3 ? parts[2...].joined(separator: "__") : tool).replacingOccurrences(of: "_", with: " ")
-            let detail = input["description"] as? String ?? (parts.count >= 3 ? parts[1] : input.values.compactMap { $0 as? String }.first ?? "")
+            let detail = input["description"] as? String ?? (parts.count >= 3 ? parts[1] : Self.firstText(in: input))
             return (String(format: Strings.claudePermissionFor, name), detail, false)
         }
     }
@@ -369,8 +388,9 @@ final class ClaudeCenter {
                 for (prefix, isNew) in [("*** Add File: ", true), ("*** Update File: ", false), ("*** Delete File: ", false)] where line.hasPrefix(prefix) {
                     files.append(((String(line.dropFirst(prefix.count)) as NSString).lastPathComponent, isNew))
                 }
-                if line.hasPrefix("+"), !line.hasPrefix("+++") { added += 1 }
-                if line.hasPrefix("-"), !line.hasPrefix("---") { removed += 1 }
+                // Codex patches mark files with "*** ", never "---"/"+++": a line like "--- note" is a removed "-- note".
+                if line.hasPrefix("+") { added += 1 }
+                if line.hasPrefix("-") { removed += 1 }
             }
             let title = files.count > 1 ? String(format: Strings.codexEditFiles, files.count)
                 : files.first.map { String(format: $0.1 ? Strings.claudeCreate : Strings.claudeEdit, $0.0) } ?? String(format: Strings.claudeEdit, "files")
@@ -382,6 +402,11 @@ final class ClaudeCenter {
             }
             return describe(tool: tool, input: input)
         }
+    }
+
+    /// The first text value by key name, so the same request always shows the same detail.
+    static func firstText(in input: [String: Any]) -> String {
+        input.keys.sorted().lazy.compactMap { input[$0] as? String }.first ?? ""
     }
 
     static func bringForward(_ app: NSRunningApplication, project: String, tty: String? = nil) {
@@ -518,16 +543,17 @@ final class ClaudeCenter {
         }
     }
 
-    private static func lines(_ s: String?) -> Int {
+    static func lines(_ s: String?) -> Int {
         guard let s, !s.isEmpty else { return 0 }
         return s.split(separator: "\n", omittingEmptySubsequences: false).count
     }
 
     /// Last paragraph of the reply as plain text. It is usually the conclusion or a question.
     static func summary(of message: String) -> String {
-        var paragraphs = message.components(separatedBy: "\n\n").map {
-            $0.replacingOccurrences(of: #"```[\s\S]*?```"#, with: "", options: .regularExpression)
-              .replacingOccurrences(of: #"\[([^\]]+)\]\([^)]+\)"#, with: "$1", options: .regularExpression)
+        // Code goes first, before splitting: a fence may hold blank lines. An unclosed one runs to the end.
+        let prose = message.replacingOccurrences(of: #"```[\s\S]*?(```|$)"#, with: "\n\n", options: .regularExpression)
+        var paragraphs = prose.components(separatedBy: "\n\n").map {
+            $0.replacingOccurrences(of: #"\[([^\]]+)\]\([^)]+\)"#, with: "$1", options: .regularExpression)
               .replacingOccurrences(of: #"(?m)^\s*(#+|[-*]|\d+\.)\s+"#, with: "", options: .regularExpression)
               .replacingOccurrences(of: #"[*_`]"#, with: "", options: .regularExpression)
               .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)

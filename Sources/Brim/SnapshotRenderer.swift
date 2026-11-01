@@ -12,6 +12,10 @@ enum SnapshotRenderer {
 
     static func runIfRequested() -> Bool {
         let args = CommandLine.arguments
+        // --appearance light|dark: Settings and Onboarding follow it instead of the system.
+        if let i = args.firstIndex(of: "--appearance"), i + 1 < args.count {
+            NSApplication.shared.appearance = NSAppearance(named: args[i + 1] == "light" ? .aqua : .darkAqua)
+        }
         if let i = args.firstIndex(of: "--render-readme"), i + 1 < args.count {
             renderReadme(to: args[i + 1]); return true
         }
@@ -53,7 +57,8 @@ enum SnapshotRenderer {
             let step: OnboardingModel.Step = switch name {
             case "access": .accessibility; case "bt": .bluetooth; case "conflict": .conflict("MediaMate"); case "notch": .notch
             case "features": .features; case "agents": .agents; case "done": .done; default: .welcome }
-            let host = NSHostingView(rootView: OnboardingView(model: OnboardingModel(snapshot: step)))
+            // The window's own background, so light and dark renders look like the real window.
+            let host = NSHostingView(rootView: OnboardingView(model: OnboardingModel(snapshot: step)).background(Color(nsColor: .windowBackgroundColor)))
             let w = NSWindow(contentRect: NSRect(origin: .zero, size: host.fittingSize), styleMask: [.titled], backing: .buffered, defer: false)
             w.contentView = host
             host.layoutSubtreeIfNeeded()
@@ -92,8 +97,7 @@ enum SnapshotRenderer {
         }
         let view = IslandView(model: model, screen: screen)
             .frame(width: 460, height: 130)
-            .background(LinearGradient(colors: [Color(red: 0.85, green: 0.45, blue: 0.3), Color(red: 0.3, green: 0.35, blue: 0.8)],
-                                       startPoint: .leading, endPoint: .trailing))
+            .background(stage)
         let renderer = ImageRenderer(content: view)
         renderer.scale = 2
         if let img = renderer.nsImage, let tiff = img.tiffRepresentation,
@@ -176,8 +180,23 @@ enum SnapshotRenderer {
         }
     }
 
+    /// --plain: a flat gray instead of gradients, for regression tests (small PNGs, same island pixels).
+    static var plain: Bool { CommandLine.arguments.contains("--plain") }
+
+    /// Colorful background behind single renders.
+    private static var stage: AnyView {
+        if plain { return AnyView(Color(white: 0.5)) }
+        return AnyView(LinearGradient(colors: [Color(red: 0.85, green: 0.45, blue: 0.3), Color(red: 0.3, green: 0.35, blue: 0.8)],
+                                      startPoint: .leading, endPoint: .trailing))
+    }
+
     /// Soft desktop-like gradient behind the README images.
-    private static var backdrop: some View {
+    private static var backdrop: AnyView {
+        if plain { return AnyView(Color(white: 0.5)) }
+        return AnyView(backdropGradient)
+    }
+
+    private static var backdropGradient: some View {
         ZStack {
             Color(red: 0.23, green: 0.16, blue: 0.36)
             RadialGradient(colors: [Color(red: 1, green: 0.6, blue: 0.38), .clear], center: UnitPoint(x: 0.1, y: 0), startRadius: 0, endRadius: 420)
@@ -217,8 +236,7 @@ enum SnapshotRenderer {
         }
         let view = IslandView(model: model, screen: screen)
             .frame(width: 520, height: 190)
-            .background(LinearGradient(colors: [Color(red: 0.85, green: 0.45, blue: 0.3), Color(red: 0.3, green: 0.35, blue: 0.8)],
-                                       startPoint: .leading, endPoint: .trailing))
+            .background(stage)
         let host = NSHostingView(rootView: view)
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 190), styleMask: [.borderless], backing: .buffered, defer: false)
         w.contentView = host
@@ -234,8 +252,7 @@ enum SnapshotRenderer {
         model.charge = ChargeEvent(kind: k, percent: k == .unplugged ? 64 : k == .low ? 10 : 80)
         let view = IslandView(model: model, screen: screen)
             .frame(width: 460, height: 120)
-            .background(LinearGradient(colors: [Color(red: 0.85, green: 0.45, blue: 0.3), Color(red: 0.3, green: 0.35, blue: 0.8)],
-                                       startPoint: .leading, endPoint: .trailing))
+            .background(stage)
         let host = NSHostingView(rootView: view)
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 120), styleMask: [.borderless], backing: .buffered, defer: false)
         w.contentView = host
@@ -254,8 +271,7 @@ enum SnapshotRenderer {
         if options.contains("claude") { model.claude = ClaudeNotice(session: "s", project: "brim", kind: .waiting, hostName: "VS Code") }
         let view = IslandView(model: model, screen: screen)
             .frame(width: 460, height: 80)
-            .background(LinearGradient(colors: [Color(red: 0.85, green: 0.45, blue: 0.3), Color(red: 0.3, green: 0.35, blue: 0.8)],
-                                       startPoint: .leading, endPoint: .trailing))
+            .background(stage)
         let host = NSHostingView(rootView: view)
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 80), styleMask: [.borderless], backing: .buffered, defer: false)
         w.contentView = host
@@ -323,8 +339,7 @@ enum SnapshotRenderer {
         if has("open") { screen.expanded = true; screen.expandedClaude = true }
         let view = IslandView(model: model, screen: screen)
             .frame(width: 560, height: height)
-            .background(LinearGradient(colors: [Color(red: 0.85, green: 0.45, blue: 0.3), Color(red: 0.3, green: 0.35, blue: 0.8)],
-                                       startPoint: .leading, endPoint: .trailing))
+            .background(stage)
         let host = NSHostingView(rootView: view)
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: height), styleMask: [.borderless], backing: .buffered, defer: false)
         w.contentView = host
@@ -340,8 +355,7 @@ enum SnapshotRenderer {
         model.boop = BoopEvent(annoyed: annoyed)
         let view = IslandView(model: model, screen: screen)
             .frame(width: 360, height: 110)
-            .background(LinearGradient(colors: [Color(red: 0.85, green: 0.45, blue: 0.3), Color(red: 0.3, green: 0.35, blue: 0.8)],
-                                       startPoint: .leading, endPoint: .trailing))
+            .background(stage)
         let host = NSHostingView(rootView: view)
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 110), styleMask: [.borderless], backing: .buffered, defer: false)
         w.contentView = host
@@ -349,8 +363,13 @@ enum SnapshotRenderer {
         save(host, to: path)
     }
 
+    /// Always at 2x, whatever the main display is, so renders compare across machines and displays.
     private static func save(_ view: NSView, to path: String) {
-        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        let size = view.bounds.size
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2),
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return }
+        rep.size = size
         view.cacheDisplay(in: view.bounds, to: rep)
         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
     }

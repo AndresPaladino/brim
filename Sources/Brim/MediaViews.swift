@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import QuartzCore
 
@@ -181,7 +182,7 @@ private struct ArtworkView: View {
 }
 
 /// Redraws once per second, only while open and playing.
-private struct Scrubber: View {
+struct Scrubber: View {
     let nowPlaying: NowPlaying
     let onSeek: (Double) -> Void
 
@@ -203,7 +204,7 @@ private struct Scrubber: View {
             let pos = dragging ?? nowPlaying.position(at: ctx.date)
             HStack(spacing: 8) {
                 Text(Self.format(pos))
-                    .frame(width: 30, alignment: .leading)
+                    .frame(width: Self.labelWidth(duration: d, remaining: false), alignment: .leading)
                 GeometryReader { g in
                     let h: CGFloat = hovering || dragging != nil ? 7 : 4.5
                     ZStack(alignment: .leading) {
@@ -225,7 +226,7 @@ private struct Scrubber: View {
                     .animation(.spring(duration: 0.25, bounce: 0.3), value: h)
                 }
                 Text("−" + Self.format(d - pos))
-                    .frame(width: 34, alignment: .trailing)
+                    .frame(width: Self.labelWidth(duration: d, remaining: true), alignment: .trailing)
             }
             .font(.system(size: 10, weight: .medium).monospacedDigit())
             .foregroundStyle(.white.opacity(0.5))
@@ -235,7 +236,15 @@ private struct Scrubber: View {
 
     static func format(_ t: Double) -> String {
         let s = max(0, Int(t))
+        if s >= 3600 { return "\(s / 3600):" + String(format: "%02d:%02d", s / 60 % 60, s % 60) }
         return "\(s / 60):" + String(format: "%02d", s % 60)
+    }
+
+    /// Wide enough for the longest time the track can show, so the bar keeps still while it plays.
+    static func labelWidth(duration: Double, remaining: Bool) -> CGFloat {
+        let text = (remaining ? "−" : "") + format(duration)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium)
+        return max(remaining ? 34 : 30, ((text as NSString).size(withAttributes: [.font: font]).width).rounded(.up))
     }
 }
 

@@ -17,7 +17,7 @@ final class MediaKeyTap {
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     /// Keys whose keyDown was consumed; their keyUp is consumed too.
-    fileprivate var consumed = Set<Int>()
+    var consumed = Set<Int>()
 
     init(handler: @escaping Handler) { self.handler = handler }
 
@@ -44,6 +44,14 @@ final class MediaKeyTap {
         return true
     }
 
+    /// Key code and down/up from an NX_SYSDEFINED event's data1, or nil for other states.
+    static func decode(data1: Int) -> (code: Int, down: Bool)? {
+        let code = (data1 & 0xFFFF_0000) >> 16
+        let state = (data1 & 0xFF00) >> 8
+        guard state == 0xA || state == 0xB else { return nil }
+        return (code, state == 0xA)
+    }
+
     /// macOS may disable the tap during sleep.
     func ensureEnabled() { reenable() }
 
@@ -51,7 +59,7 @@ final class MediaKeyTap {
         if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
     }
 
-    fileprivate func handle(code: Int, down: Bool, fine: Bool) -> Bool {
+    func handle(code: Int, down: Bool, fine: Bool) -> Bool {
         let key: MediaKey
         switch code {
         case 0: key = .volumeUp
@@ -82,12 +90,9 @@ private func mediaKeyCallback(proxy: CGEventTapProxy, type: CGEventType, event: 
     guard type.rawValue == 14, let ns = NSEvent(cgEvent: event), ns.subtype.rawValue == 8 else {
         return Unmanaged.passUnretained(event)
     }
-    let data1 = ns.data1
-    let code = (data1 & 0xFFFF_0000) >> 16
-    let state = (data1 & 0xFF00) >> 8
-    guard state == 0xA || state == 0xB else { return Unmanaged.passUnretained(event) }
+    guard let (code, down) = MediaKeyTap.decode(data1: ns.data1) else { return Unmanaged.passUnretained(event) }
     // Option + Shift: quarter steps, as in macOS.
     let fine = ns.modifierFlags.contains(.option) && ns.modifierFlags.contains(.shift)
-    let swallow = me.handle(code: code, down: state == 0xA, fine: fine)
+    let swallow = me.handle(code: code, down: down, fine: fine)
     return swallow ? nil : Unmanaged.passUnretained(event)
 }

@@ -20,7 +20,7 @@ enum Agent: String {
 struct ClaudeIncoming {
     let agent: Agent
     let name: String
-    let session: String
+    var session: String
     let cwd: String
     let json: [String: Any]
     /// The app hosting the session (a terminal or VS Code).
@@ -39,36 +39,40 @@ struct ClaudeIncoming {
 /// Receives Claude Code and Codex hook events over a local Unix socket.
 @MainActor
 final class ClaudeBridge {
-    static let socketPath = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/Brim/claude.sock").path
+    /// BRIM_SOCKET points a test copy elsewhere, so the Mac's real Claude Code and Codex sessions
+    /// don't reach it. The hook scripts read the same variable.
+    nonisolated static let defaultSocketPath = ProcessInfo.processInfo.environment["BRIM_SOCKET"]
+        ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Brim/claude.sock").path
+    let socketPath: String
+
+    init(socketPath: String? = nil) { self.socketPath = socketPath ?? Self.defaultSocketPath }
 
     /// `reply` is only set for permission requests, where the hook waits for an answer.
     var onEvent: ((ClaudeIncoming, ClaudeReply?) -> Void)?
 
     private var listenFD: Int32 = -1
     private var acceptSource: DispatchSourceRead?
+    private var folderWatch: DispatchSourceFileSystemObject?
+    private var socketInode: ino_t = 0
     private var connections: [ObjectIdentifier: ClaudeConnection] = [:]
 
     var isRunning: Bool { listenFD >= 0 }
 
     func start() {
         guard !isRunning else { return }
-        let path = Self.socketPath
+        let path = socketPath
+        guard var addr = Self.address(path) else { return }
         try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        // Another Brim (or a test build) already listening keeps the socket; taking it would leave
+        // that one listening on a deleted file.
+        guard !Self.isListening(path) else { return }
         unlink(path)
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return }
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-        let maxLen = MemoryLayout.size(ofValue: addr.sun_path)
-        guard path.utf8.count < maxLen else { close(fd); return }
-        withUnsafeMutableBytes(of: &addr.sun_path) { raw in
-            raw.copyBytes(from: path.utf8)
-            raw[path.utf8.count] = 0
-        }
         let size = socklen_t(MemoryLayout<sockaddr_un>.size)
         let bound = withUnsafePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, size) } }
-        guard bound == 0, listen(fd, 8) == 0 else { close(fd); return }
+        // A full backlog refuses connections at once on macOS, and the hook takes that as "Brim isn't running".
+        guard bound == 0, listen(fd, SOMAXCONN) == 0 else { close(fd); return }
         chmod(path, 0o600)
         _ = fcntl(fd, F_SETFL, O_NONBLOCK)
         listenFD = fd
@@ -76,12 +80,66 @@ final class ClaudeBridge {
         source.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.acceptAll() } }
         source.resume()
         acceptSource = source
+        var info = stat()
+        socketInode = stat(path, &info) == 0 ? info.st_ino : 0
+        watchFolder()
+    }
+
+    /// Someone deleting or replacing the socket file (or its folder) would silence every hook until
+    /// the next launch. Watching the folder costs nothing while it doesn't change.
+    private func watchFolder() {
+        folderWatch?.cancel(); folderWatch = nil
+        let fd = open((socketPath as NSString).deletingLastPathComponent, O_EVTONLY)
+        guard fd >= 0 else { return }
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .delete, .rename], queue: .main)
+        source.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.checkSocket() } }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        folderWatch = source
+    }
+
+    private func checkSocket() {
+        guard isRunning else { return }
+        var info = stat()
+        if stat(socketPath, &info) == 0, info.st_ino == socketInode { return }
+        // Open connections keep working: only the listener moves to a new file.
+        closeListener(unlinking: false)
+        start()
+    }
+
+    private func closeListener(unlinking: Bool) {
+        folderWatch?.cancel(); folderWatch = nil
+        acceptSource?.cancel(); acceptSource = nil
+        guard listenFD >= 0 else { return }
+        close(listenFD); listenFD = -1
+        var info = stat()
+        if unlinking, stat(socketPath, &info) == 0, info.st_ino == socketInode { unlink(socketPath) }
+    }
+
+    private static func address(_ path: String) -> sockaddr_un? {
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        guard path.utf8.count < MemoryLayout.size(ofValue: addr.sun_path) else { return nil }
+        withUnsafeMutableBytes(of: &addr.sun_path) { raw in
+            raw.copyBytes(from: path.utf8)
+            raw[path.utf8.count] = 0
+        }
+        return addr
+    }
+
+    /// Whether something accepts connections at `path`. A file left by a crash refuses them.
+    static func isListening(_ path: String) -> Bool {
+        guard var addr = address(path) else { return false }
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        let size = socklen_t(MemoryLayout<sockaddr_un>.size)
+        return withUnsafePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, size) } } == 0
     }
 
     func stop() {
-        acceptSource?.cancel(); acceptSource = nil
-        if listenFD >= 0 { close(listenFD); listenFD = -1 }
-        unlink(Self.socketPath)
+        // Only remove the socket if it's ours: it may belong to another instance.
+        closeListener(unlinking: true)
         connections.values.forEach { $0.finish(nil) }
         connections.removeAll()
     }
@@ -103,7 +161,7 @@ final class ClaudeBridge {
         }
     }
 
-    private func received(_ line: Data, host: NSRunningApplication?, tty: String?, conn: ClaudeConnection) {
+    func received(_ line: Data, host: NSRunningApplication?, tty: String?, conn: ClaudeConnection) {
         guard let json = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
               let name = json["hook_event_name"] as? String else { conn.finish(nil); return }
         let agent = Agent(rawValue: json["brim_agent"] as? String ?? "") ?? .claude
@@ -156,7 +214,7 @@ final class ClaudeReply {
         didSet { conn.onClose = { [weak self, previous = conn.onClose] in previous?(); self?.onGone?() } }
     }
 
-    fileprivate init(_ conn: ClaudeConnection) { self.conn = conn }
+    init(_ conn: ClaudeConnection) { self.conn = conn }
 
     func allow() { send(["behavior": "allow"]) }
     /// Allow with modified input. This is how AskUserQuestion gets answered (questions plus `answers`).
@@ -275,7 +333,7 @@ final class TranscriptWatch {
         self.source = source
     }
 
-    private func newLinesAnswer() -> Bool {
+    func newLinesAnswer() -> Bool {
         guard let handle = FileHandle(forReadingAtPath: path) else { return false }
         defer { try? handle.close() }
         try? handle.seek(toOffset: offset)
@@ -293,7 +351,7 @@ final class TranscriptWatch {
         }
     }
 
-    private static func findToolUse(in path: String, size: UInt64, tool: String, input: [String: Any]) -> String? {
+    static func findToolUse(in path: String, size: UInt64, tool: String, input: [String: Any]) -> String? {
         guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
         defer { try? handle.close() }
         try? handle.seek(toOffset: size > 512 << 10 ? size - (512 << 10) : 0)
@@ -310,7 +368,7 @@ final class TranscriptWatch {
         return nil
     }
 
-    private static func contentItems(of line: Data) -> [[String: Any]] {
+    static func contentItems(of line: Data) -> [[String: Any]] {
         guard let json = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
               let message = json["message"] as? [String: Any] else { return [] }
         return message["content"] as? [[String: Any]] ?? []

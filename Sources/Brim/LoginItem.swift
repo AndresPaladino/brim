@@ -8,6 +8,10 @@ private let log = Logger(subsystem: "com.andrespaladino.brim", category: "login"
 enum LoginItem {
     private static let configuredKey = "loginItemConfigured"
 
+    nonisolated static func shouldEnableOnFirstLaunch(configured: Bool, bundlePath: String) -> Bool {
+        !configured && bundlePath.hasPrefix("/Applications/")
+    }
+
     static var isEnabled: Bool { SMAppService.mainApp.status == .enabled }
 
     static func setEnabled(_ enabled: Bool) {
@@ -21,8 +25,7 @@ enum LoginItem {
     /// On by default the first time the app runs from /Applications.
     static func enableOnFirstLaunch() {
         let defaults = UserDefaults.standard
-        guard !defaults.bool(forKey: configuredKey),
-              Bundle.main.bundleURL.path.hasPrefix("/Applications/") else { return }
+        guard shouldEnableOnFirstLaunch(configured: defaults.bool(forKey: configuredKey), bundlePath: Bundle.main.bundleURL.path) else { return }
         defaults.set(true, forKey: configuredKey)
         setEnabled(true)
     }

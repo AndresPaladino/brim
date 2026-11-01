@@ -2,7 +2,9 @@ import Foundation
 
 /// UI text from Resources/<lang>.lproj/Localizable.strings. Spanish or English, English otherwise.
 enum Strings {
-    private static func t(_ key: String) -> String { NSLocalizedString(key, comment: "") }
+    /// Tests point this at Resources/<lang>.lproj.
+    nonisolated(unsafe) static var bundle: Bundle = .main
+    private static func t(_ key: String) -> String { NSLocalizedString(key, bundle: bundle, comment: "") }
 
     static var connected: String { t("device.connected") }
     static var lowBattery: String { t("device.lowBattery") }

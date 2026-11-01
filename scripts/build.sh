@@ -2,7 +2,8 @@
 # Builds Brim.app into ~/Library/Caches/brim-build and signs it.
 # Build output stays out of the project folder: if it lives in iCloud Drive, the extended attributes
 # iCloud adds make codesign fail.
-# Usage: scripts/build.sh [--run | --install]
+# Usage: scripts/build.sh [--run | --install | --test]
+# --test builds a separate copy for scripts/test (test.noindex) and leaves the running Brim alone.
 set -euo pipefail
 cd "${0:A:h}/.."
 
@@ -12,10 +13,11 @@ IDENTITY="Notch Island Dev"
 SCRATCH="$HOME/Library/Caches/brim-build"
 # .noindex keeps this copy out of Spotlight and Launchpad.
 APP="$SCRATCH/app.noindex/Brim.app"
+[[ "${1:-}" == "--test" ]] && APP="$SCRATCH/test.noindex/Brim.app"
 
 swift build -c release --scratch-path "$SCRATCH"
 
-pkill -x Brim 2>/dev/null || true
+[[ "${1:-}" == "--test" ]] || pkill -x Brim 2>/dev/null || true
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$SCRATCH/release/Brim" "$APP/Contents/MacOS/"
@@ -29,7 +31,8 @@ clang -dynamiclib -fobjc-arc -O2 -Wall -arch arm64 -arch x86_64 -framework Found
 cp Helper/NowPlayingBridge.pl "$APP/Contents/Resources/"
 cp Resources/claude-hook.sh Resources/codex-hook.sh "$APP/Contents/Resources/"
 
-# Sparkle, for updates. It arrives signed and notarized by its developers, so it keeps that signature.
+# Sparkle, for updates. SwiftPM's copy comes signed ad hoc (the developers' signature is only in their
+# release tarball) and keeps that signature: updates are verified with EdDSA, not with code signing.
 mkdir -p "$APP/Contents/Frameworks"
 ditto "$SCRATCH/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" \
   "$APP/Contents/Frameworks/Sparkle.framework"

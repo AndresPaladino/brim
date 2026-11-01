@@ -60,11 +60,19 @@ final class FullscreenMonitor {
     private static func fullscreenDisplays() -> Set<CGDirectDisplayID> {
         guard let connection, let copySpaces,
               let info = copySpaces(connection())?.takeRetainedValue() as? [[String: Any]] else { return [] }
-        let byUUID = Dictionary(NSScreen.screens.compactMap { s -> (String, CGDirectDisplayID)? in
+        return fullscreenDisplays(in: info, byUUID: displaysByUUID())
+    }
+
+    private static func displaysByUUID() -> [String: CGDirectDisplayID] {
+        Dictionary(NSScreen.screens.compactMap { s -> (String, CGDirectDisplayID)? in
             guard let id = (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value,
                   let uuid = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue() else { return nil }
             return (CFUUIDCreateString(nil, uuid) as String, id)
         }, uniquingKeysWith: { first, _ in first }) // mirrored displays can share a UUID
+    }
+
+    /// Displays whose current Space is a full screen app, from SkyLight's managed display spaces.
+    static func fullscreenDisplays(in info: [[String: Any]], byUUID: [String: CGDirectDisplayID]) -> Set<CGDirectDisplayID> {
         var result = Set<CGDirectDisplayID>()
         for display in info {
             guard let current = display["Current Space"] as? [String: Any],
@@ -119,16 +127,22 @@ final class PowerMonitor {
         guard let now = Self.read() else { return }
         defer { last = (now.onAC, now.charging, now.percent) }
         guard let last else { return }
+        if let event = Self.event(from: last, to: now) { onEvent?(event) }
+    }
+
+    /// The alert for a change in the power source, if any.
+    static func event(from last: (onAC: Bool, charging: Bool, percent: Int), to now: (onAC: Bool, charging: Bool, charged: Bool, percent: Int)) -> Event? {
         if now.onAC && !last.onAC {
             // Charging starts a moment after plugging in, so check "charged" instead of "charging".
-            onEvent?(.plugged(percent: now.percent, alreadyFull: now.charged || now.percent >= 100))
+            return .plugged(percent: now.percent, alreadyFull: now.charged || now.percent >= 100)
         } else if !now.onAC && last.onAC {
-            onEvent?(.unplugged(percent: now.percent))
+            return .unplugged(percent: now.percent)
         } else if now.onAC && last.charging && !now.charging {
             // Still plugged in but no longer charging: the charge limit was reached.
-            onEvent?(.full(percent: now.percent))
-        } else if !now.onAC, Self.lowThresholds.contains(where: { last.percent > $0 && now.percent <= $0 }) {
-            onEvent?(.low(percent: now.percent))
+            return .full(percent: now.percent)
+        } else if !now.onAC, lowThresholds.contains(where: { last.percent > $0 && now.percent <= $0 }) {
+            return .low(percent: now.percent)
         }
+        return nil
     }
 }

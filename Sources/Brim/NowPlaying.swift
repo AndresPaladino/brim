@@ -44,6 +44,10 @@ final class NowPlayingService {
     private var input: FileHandle?
     private var current: NowPlaying?
     private var restarts = 0
+    private var startedAt = Date.distantPast
+    private var pendingStart: DispatchWorkItem?
+    /// The bridge process, for debug state and tests.
+    var bridgePID: Int32? { process?.processIdentifier }
 
     func start() {
         guard process == nil,
@@ -73,6 +77,7 @@ final class NowPlayingService {
         }
         do {
             try p.run()
+            startedAt = Date()
             process = p
             input = inp.fileHandleForWriting
         } catch {
@@ -80,9 +85,9 @@ final class NowPlayingService {
         }
     }
 
-    /// Asks the bridge for the full state, e.g. after wake. Relaunches it if it gave up after crashing.
+    /// Asks the bridge for the full state, e.g. after wake. Relaunches it at once if it's waiting to.
     func refresh() {
-        guard process != nil else { restarts = 0; start(); return }
+        guard process != nil else { pendingStart?.cancel(); pendingStart = nil; restarts = 0; start(); return }
         try? input?.write(contentsOf: Data("refresh\n".utf8))
     }
 
@@ -100,9 +105,19 @@ final class NowPlayingService {
     private func bridgeEnded() {
         process = nil
         input = nil
-        guard restarts < 5 else { log.error("The bridge crashed too many times"); return }
+        // A bridge that ran for a while had no trouble starting: begin counting again.
+        if Date().timeIntervalSince(startedAt) > 60 { restarts = 0 }
         restarts += 1
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.start() }
+        let delay = Self.restartDelay(after: restarts)
+        if restarts > 5 { log.error("The bridge keeps crashing; next try in \(Int(delay)) s") }
+        let work = DispatchWorkItem { [weak self] in self?.pendingStart = nil; self?.start() }
+        pendingStart = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// 2 s for the first five crashes in a row, then doubling up to 5 minutes. It never gives up.
+    static func restartDelay(after crashes: Int) -> TimeInterval {
+        crashes <= 5 ? 2 : min(2 * pow(2, Double(crashes - 5)), 300)
     }
 
     private func apply(_ o: [String: Any], artwork: (image: NSImage, accent: NSColor)?) {
@@ -112,7 +127,6 @@ final class NowPlayingService {
             onChange?(nil)
             return
         }
-        restarts = 0
         var np = NowPlaying(
             title: o["title"] as? String ?? "",
             artist: o["artist"] as? String ?? "",
@@ -184,7 +198,7 @@ final class NowPlayingService {
 
 /// Splits the bridge's JSON lines and prepares artwork off the main thread.
 /// Only used by the pipe's readability handler, which macOS calls serially.
-private final class LineParser: @unchecked Sendable {
+final class LineParser: @unchecked Sendable {
     struct Message { let object: [String: Any]; let artwork: (image: NSImage, accent: NSColor)? }
     private var buffer = Data()
 
@@ -196,14 +210,28 @@ private final class LineParser: @unchecked Sendable {
             buffer.removeSubrange(buffer.startIndex...nl)
             guard let obj = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
             var artwork: (NSImage, NSColor)?
-            if let b64 = obj["artwork"] as? String, let d = Data(base64Encoded: b64), let img = NSImage(data: d),
-               let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                // Decode to a bitmap here so SwiftUI doesn't do it on the main thread.
-                let decoded = NSImage(cgImage: cg, size: img.size)
+            if let b64 = obj["artwork"] as? String, let d = Data(base64Encoded: b64), let cg = Self.thumbnail(d) {
+                let decoded = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
                 artwork = (decoded, NowPlayingService.accent(of: decoded))
             }
             out.append(Message(object: obj, artwork: artwork))
         }
         return out
+    }
+
+    /// Largest side kept: the cover shows at 90 pt, 180 px on a Retina display.
+    static let artworkPixels = 400
+
+    /// Decodes here, at most `artworkPixels` wide, so SwiftUI doesn't decode on the main thread and a
+    /// 3000 px cover doesn't sit in memory as a 36 MB bitmap.
+    static func thumbnail(_ data: Data) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: artworkPixels,
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }
 }

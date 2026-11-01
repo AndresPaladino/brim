@@ -18,7 +18,7 @@ struct BoopContent: View {
     let event: BoopEvent
 
     var body: some View {
-        FaceAnimation(timeline: { FaceDrawing.boopParams(at: $0, annoyed: event.annoyed) })
+        FaceAnimation(duration: FaceDrawing.boopDuration(annoyed: event.annoyed), timeline: { FaceDrawing.boopParams(at: $0, annoyed: event.annoyed) })
             .frame(width: 34, height: 34)
             .padding(.top, 4)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -42,7 +42,7 @@ struct ChargeContent: View {
         let tint: Color = green ? Color(nsColor: .systemGreen)
             : event.kind == .low ? Color(nsColor: event.percent <= 10 ? .systemRed : .systemOrange) : .white
         HStack(spacing: 12) {
-            FaceAnimation(timeline: { FaceDrawing.params(at: $0, kind: event.kind) })
+            FaceAnimation(duration: FaceDrawing.duration(event.kind), timeline: { FaceDrawing.params(at: $0, kind: event.kind) })
                 .frame(width: 34, height: 34)
                 .frame(width: 40, height: 40)
             Text(title)
@@ -62,29 +62,48 @@ struct ChargeContent: View {
     }
 }
 
-/// Draws the face frame by frame while the alert is up (about 3 s), then the view goes away.
+/// Draws the face frame by frame while it moves, then holds the last frame until the alert leaves.
 struct FaceAnimation: View {
+    /// When the face stops moving, in ms.
+    let duration: Double
     /// Face parameters at each moment, in ms since it appeared.
     let timeline: (Double) -> FaceDrawing.Params
     // Built without Xcode, so no @State macro: State is used directly.
     private let startState = State(initialValue: Date())
 
     var body: some View {
-        TimelineView(.animation) { ctx in
+        TimelineView(CritterSchedule(start: startState.wrappedValue, active: duration, idleFrom: nil, tick: 1000 / 60)) { ctx in
             let ms = SnapshotRenderer.isActive ? SnapshotRenderer.faceTime : ctx.date.timeIntervalSince(startState.wrappedValue) * 1000
-            Canvas { gc, size in FaceDrawing.draw(timeline(ms), in: gc, size: size) }
+            Canvas { gc, size in
+                FaceDrawing.frames += 1
+                FaceDrawing.draw(timeline(ms), in: gc, size: size)
+            }
         }
     }
 }
 
 /// Animation timelines in milliseconds.
 enum FaceDrawing {
-    struct Params {
+    /// Frames drawn since launch, for `brimctl stats`.
+    nonisolated(unsafe) static var frames = 0
+    struct Params: Equatable {
         var intro = 0.0, eyes = 0.0, nose = 0.0, mouth = 0.0, smile = 0.0, look = 0.0, blink = 0.0
         var happy = 0.0, big = 0.0, jump = 0.0, squash = 0.0, pulse = 1.0, green = 0.0
         /// Boop: wink, surprise ("O O"), annoyed ("> <") and shake.
         var wink = 0.0, surprise = 0.0, annoyed = 0.0, shake = 0.0
     }
+
+    /// When each timeline below reaches its last frame, in ms.
+    static func duration(_ kind: ChargeEvent.Kind) -> Double {
+        switch kind {
+        case .plugged, .charged: 1260
+        case .unplugged: 1150
+        case .low: 1700
+        case .full: 1750
+        }
+    }
+
+    static func boopDuration(annoyed: Bool) -> Double { annoyed ? 1450 : 1750 }
 
     private static func clamp(_ x: Double) -> Double { min(1, max(0, x)) }
     private static func out(_ t: Double) -> Double { 1 - pow(1 - t, 3) }

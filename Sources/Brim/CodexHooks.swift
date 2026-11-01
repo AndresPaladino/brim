@@ -9,7 +9,13 @@ import Foundation
 enum CodexHooks {
     enum Failure: Error { case unreadable, noHook }
 
+    /// Tests point these at a temporary folder, script and defaults suite.
+    nonisolated(unsafe) static var homeOverride: URL?
+    nonisolated(unsafe) static var hookPathOverride: String?
+    nonisolated(unsafe) static var defaults: UserDefaults = .standard
+
     static var home: URL {
+        if let homeOverride { return homeOverride }
         // Point at a copy for testing: BRIM_CODEX_HOME=/path/.codex
         if let path = ProcessInfo.processInfo.environment["BRIM_CODEX_HOME"] { return URL(fileURLWithPath: path) }
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
@@ -17,8 +23,8 @@ enum CodexHooks {
     static var hooksURL: URL { home.appendingPathComponent("hooks.json") }
     static var configURL: URL { home.appendingPathComponent("config.toml") }
 
-    private static var hookCommand: String? {
-        guard let path = Bundle.main.path(forResource: "codex-hook", ofType: "sh") else { return nil }
+    static var hookCommand: String? {
+        guard let path = hookPathOverride ?? Bundle.main.path(forResource: "codex-hook", ofType: "sh") else { return nil }
         return path.contains(" ") ? "'\(path)'" : path
     }
 
@@ -98,7 +104,7 @@ enum CodexHooks {
     }
 
     /// A JSON string the way serde_json writes it.
-    private static func quoted(_ s: String) -> String {
+    static func quoted(_ s: String) -> String {
         var out = "\""
         for u in s.unicodeScalars {
             switch u {
@@ -118,14 +124,18 @@ enum CodexHooks {
 
     /// Replaces the trust entries Brim wrote before with these. Other entries stay as they are.
     private static func writeTrust(_ entries: [(key: String, hash: String)]) throws {
-        let defaults = UserDefaults.standard
         let previous = defaults.stringArray(forKey: "codexTrustKeys") ?? []
         let text = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
         var lines = text.components(separatedBy: "\n")
         let stale = Set((previous + entries.map(\.key)).map { "[hooks.state.\"\($0)\"]" })
+        // A header may end in a comment: [hooks.state."…"] # note
+        let isStale = { (line: String) -> Bool in
+            let line = line.trimmingCharacters(in: .whitespaces)
+            return stale.contains { line.hasPrefix($0) && (line == $0 || line.dropFirst($0.count).trimmingCharacters(in: .whitespaces).hasPrefix("#")) }
+        }
         var i = 0
         while i < lines.count {
-            guard stale.contains(lines[i].trimmingCharacters(in: .whitespaces)) else { i += 1; continue }
+            guard isStale(lines[i]) else { i += 1; continue }
             var end = i + 1
             while end < lines.count, !lines[end].trimmingCharacters(in: .whitespaces).hasPrefix("[") { end += 1 }
             lines.removeSubrange(i..<end)
@@ -134,7 +144,7 @@ enum CodexHooks {
         for e in entries { lines += ["", "[hooks.state.\"\(e.key)\"]", "trusted_hash = \"\(e.hash)\""] }
         let out = lines.joined(separator: "\n") + "\n"
         if out != text {
-            try backup(configURL)
+            try HookFile.backup(configURL) { text in previous.contains { text.contains("[hooks.state.\"\($0)\"]") } }
             try out.write(to: configURL, atomically: true, encoding: .utf8)
         }
         defaults.set(entries.map(\.key), forKey: "codexTrustKeys")
@@ -151,31 +161,26 @@ enum CodexHooks {
 
     private static func writeHooks(_ json: [String: Any]) throws {
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
-        try backup(hooksURL)
+        try HookFile.backup(hooksURL) { text in
+            let hooks = (try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])?["hooks"] as? [String: Any] ?? [:]
+            return hooks.values.contains { commands(in: $0).contains { HookFile.isBrim($0, script: "codex-hook.sh") } }
+        }
         let data = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         try data.write(to: hooksURL, options: .atomic)
-    }
-
-    private static func backup(_ url: URL) throws {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: url.path) else { return }
-        let copy = url.appendingPathExtension("brim-backup")
-        try? fm.removeItem(at: copy)
-        try fm.copyItem(at: url, to: copy)
     }
 
     private static func commands(in entries: Any) -> [String] {
         (entries as? [[String: Any]] ?? []).flatMap { ($0["hooks"] as? [[String: Any]] ?? []).compactMap { $0["command"] as? String } }
     }
 
-    /// Removes every Brim entry, including ones from older copies.
-    private static func removingBrim(from hooks: [String: Any]) -> [String: Any] {
+    /// Removes every Brim entry, including ones from other copies of the app.
+    static func removingBrim(from hooks: [String: Any]) -> [String: Any] {
         var out: [String: Any] = [:]
         for (event, value) in hooks {
             guard let entries = value as? [[String: Any]] else { out[event] = value; continue }
             let kept = entries.compactMap { entry -> [String: Any]? in
                 guard let list = entry["hooks"] as? [[String: Any]] else { return entry }
-                let others = list.filter { !(($0["command"] as? String ?? "").contains("codex-hook.sh")) }
+                let others = list.filter { !HookFile.isBrim($0["command"] as? String ?? "", script: "codex-hook.sh") }
                 if others.isEmpty { return nil }
                 var e = entry
                 e["hooks"] = others

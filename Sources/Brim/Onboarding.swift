@@ -113,6 +113,13 @@ final class OnboardingModel: NSObject, ObservableObject, CBCentralManagerDelegat
         if step == .accessibility, AXIsProcessTrusted() { markGranted() }
     }
 
+    /// The window closed before the end: nothing keeps checking in the background.
+    func stop() {
+        stopWatching()
+        bluetooth?.delegate = nil
+        bluetooth = nil
+    }
+
     private func stopWatching() {
         if let axObserver { DistributedNotificationCenter.default().removeObserver(axObserver) }
         axObserver = nil
@@ -399,6 +406,7 @@ final class OnboardingWindow {
     private static let doneKey = "onboardingDone"
     private var window: NSWindow?
     private var model: OnboardingModel?
+    private var closeObserver: NSObjectProtocol?
 
     /// First launch without Accessibility, or forced with --onboarding.
     static var shouldShow: Bool {
@@ -436,7 +444,19 @@ final class OnboardingWindow {
         w.contentView = host
         w.center()
         window = w
+        // Closed from the title bar on the Accessibility step, the once-a-second check kept running.
+        closeObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.closed() }
+        }
         NSApp.activate()
         w.makeKeyAndOrderFront(nil)
+    }
+
+    private func closed() {
+        model?.stop()
+        model = nil
+        window = nil
+        if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) }
+        closeObserver = nil
     }
 }

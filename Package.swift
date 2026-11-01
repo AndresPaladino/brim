@@ -16,6 +16,12 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)],
             // build.sh copies Sparkle.framework into Contents/Frameworks.
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
-        )
+        ),
+        .testTarget(
+            name: "BrimTests",
+            dependencies: ["Brim"],
+            path: "Tests/BrimTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
     ]
 )

@@ -132,7 +132,11 @@ final class IslandWindow {
         setExpanded(true)
     }
 
+    /// Debug (brimctl hover): stays open wherever the real cursor is, until `leave`.
+    var debugPinned = false
+
     private func cursorMoved() {
+        guard !debugPinned else { return }
         let inside = expandedScreenRect().insetBy(dx: -2, dy: -2).contains(NSEvent.mouseLocation)
         if inside {
             pendingClose?.cancel(); pendingClose = nil
@@ -142,6 +146,9 @@ final class IslandWindow {
             DispatchQueue.main.asyncAfter(deadline: .now() + Self.leaveDelay, execute: work)
         }
     }
+
+    /// Debug: a click in the middle of the hover area, as if the user clicked the notch.
+    func debugClick() { clicked(at: NSPoint(x: host.hotRect.midX, y: host.hotRect.midY)) }
 
     func setFullscreen(_ on: Bool) {
         guard screen.fullscreen != on else { return }
