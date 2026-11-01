@@ -146,6 +146,8 @@ h1{font:700 clamp(40px,6.6vw,76px)/1.02 -apple-system,"SF Pro Display",sans-seri
 .pals{display:flex;align-items:flex-end;gap:30px;cursor:pointer;border:0;background:none;padding:10px;border-radius:14px}
 .pals:focus-visible{outline:2px solid #0a84ff}
 .pals .hop.go{animation:hop .9s cubic-bezier(.3,0,.3,1)}
+#palpom.go{animation-delay:.12s}
+@media (max-width:420px){.pals{gap:14px;padding:6px;zoom:.8}}
 @keyframes hop{0%,100%{transform:none}30%{transform:translateY(-20px)}60%{transform:translateY(0) scaleY(.86)}75%{transform:none}}
 /* Claude mini island */
 .mini{display:flex;align-items:center;gap:9px;background:#000;border-radius:0 0 20px 20px;padding:11px 10px 11px 14px;width:calc(100% - 28px);max-width:340px;position:absolute;top:0;left:50%;transform:translateX(-50%);box-shadow:0 0 0 1px rgba(255,255,255,.06)}
@@ -158,7 +160,7 @@ h1{font:700 clamp(40px,6.6vw,76px)/1.02 -apple-system,"SF Pro Display",sans-seri
 .rb:active{transform:scale(.88)}.rb:hover{filter:brightness(1.15)}
 .rb.no{background:rgba(255,255,255,.16)}.rb.yes{background:#fff}
 .mini .done{font:600 13px -apple-system,sans-serif;color:rgba(255,255,255,.75)}
-.mini .crit{transition:transform .35s cubic-bezier(.3,1.6,.5,1)}
+.mini .crit{display:grid;place-items:center;width:28px;height:24px;flex:none;transition:transform .35s cubic-bezier(.3,1.6,.5,1)}
 .mini.happy .crit{transform:translateY(-6px)}
 /* Install */
 .install{max-width:1060px;margin:0 auto;padding:110px 20px 0;text-align:center}
@@ -302,15 +304,15 @@ footer{border-top:1px solid var(--hair);margin-top:100px}
       <div class="facts"><div><b>~25 MB</b> <span>memory</span></div><div><b>0</b> <span>network calls</span></div></div>
     </article>
     <article class="card">
-      <div class="stage"><button type="button" class="pals" id="pals" aria-label="Say hi"><span id="palface"></span><span class="hop" id="palcrit"><svg width="70" height="40" viewBox="0 0 14 8" shape-rendering="crispEdges"><g fill="#d97757"><rect x="3" y="0" width="8" height="1"/><rect x="2" y="1" width="10" height="4"/><rect x="3" y="5" width="8" height="1"/><rect x="0" y="3" width="2" height="1"/><rect x="12" y="3" width="2" height="1"/><rect x="3" y="6" width="1" height="2"/><rect x="5" y="6" width="1" height="2"/><rect x="8" y="6" width="1" height="2"/><rect x="10" y="6" width="1" height="2"/></g><rect x="4" y="2" width="1" height="2" fill="#000"/><rect x="9" y="2" width="1" height="2" fill="#000"/></svg></span></button></div>
+      <div class="stage"><button type="button" class="pals" id="pals" aria-label="Say hi"><span id="palface"></span><span class="hop" id="palcrit"><svg width="70" height="40" viewBox="0 0 14 8" shape-rendering="crispEdges"><g fill="#d97757"><rect x="3" y="0" width="8" height="1"/><rect x="2" y="1" width="10" height="4"/><rect x="3" y="5" width="8" height="1"/><rect x="0" y="3" width="2" height="1"/><rect x="12" y="3" width="2" height="1"/><rect x="3" y="6" width="1" height="2"/><rect x="5" y="6" width="1" height="2"/><rect x="8" y="6" width="1" height="2"/><rect x="10" y="6" width="1" height="2"/></g><rect x="4" y="2" width="1" height="2" fill="#000"/><rect x="9" y="2" width="1" height="2" fill="#000"/></svg></span><span class="hop" id="palpom"></span></span></button></div>
       <h3>Little friends up there.</h3>
-      <p>A face when you plug in, a wink when you click the notch. Click them to say hi.</p>
+      <p>A face when you plug in, a wink when you click the notch, and one for each agent. Click them to say hi.</p>
       <div></div>
     </article>
     <article class="card">
-      <div class="stage wall"><div class="mini" id="mini"><svg width="28" height="16" viewBox="0 0 14 8" shape-rendering="crispEdges" class="crit"><g fill="#d97757"><rect x="3" y="0" width="8" height="1"/><rect x="2" y="1" width="10" height="4"/><rect x="3" y="5" width="8" height="1"/><rect x="0" y="3" width="2" height="1"/><rect x="12" y="3" width="2" height="1"/><rect x="3" y="6" width="1" height="2"/><rect x="5" y="6" width="1" height="2"/><rect x="8" y="6" width="1" height="2"/><rect x="10" y="6" width="1" height="2"/></g><rect x="4" y="2" width="1" height="2" fill="#000"/><rect x="9" y="2" width="1" height="2" fill="#000"/></svg><div class="tx"><b>Allow Bash?</b><span>swift build</span></div><span id="miniact"><button class="rb no" type="button" aria-label="Deny" data-m="no"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 2l8 8M10 2 2 10" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg></button> <button class="rb yes" type="button" aria-label="Allow" data-m="yes"><svg width="13" height="12" viewBox="0 0 13 12"><path d="M2 6.5 5 9.5 11 2.5" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></span></div></div>
-      <h3>Even Claude needs a little help sometimes.</h3>
-      <p>Answer Claude Code's permissions and questions from the notch. Try the buttons.</p>
+      <div class="stage wall"><div class="mini" id="mini"><span class="crit" id="minicrit"><svg width="28" height="16" viewBox="0 0 14 8" shape-rendering="crispEdges"><g fill="#d97757"><rect x="3" y="0" width="8" height="1"/><rect x="2" y="1" width="10" height="4"/><rect x="3" y="5" width="8" height="1"/><rect x="0" y="3" width="2" height="1"/><rect x="12" y="3" width="2" height="1"/><rect x="3" y="6" width="1" height="2"/><rect x="5" y="6" width="1" height="2"/><rect x="8" y="6" width="1" height="2"/><rect x="10" y="6" width="1" height="2"/></g><rect x="4" y="2" width="1" height="2" fill="#000"/><rect x="9" y="2" width="1" height="2" fill="#000"/></svg></span><div class="tx"><b id="minititle">Allow Bash?</b><span id="minidetail">swift build</span></div><span id="miniact"><button class="rb no" type="button" aria-label="Deny" data-m="no"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 2l8 8M10 2 2 10" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg></button> <button class="rb yes" type="button" aria-label="Allow" data-m="yes"><svg width="13" height="12" viewBox="0 0 13 12"><path d="M2 6.5 5 9.5 11 2.5" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></span></div></div>
+      <h3>Even agents need a little help sometimes.</h3>
+      <p>Answer Claude Code and Codex from the notch: permissions, questions, and a note when they finish. Try the buttons.</p>
       <div></div>
     </article>
   </div>
@@ -738,8 +740,27 @@ function user(isPlay = false) {
 $('replay').addEventListener('click', () => { demoOn = true; held = false; demoStep = 0; $('replay').hidden = true; setMusic(false); loadTrack(0, false); runDemo(); });
 
 // ── Friends card: click to say hi ──
+// Codex's pompom, same shape and colors as the app: a fuzzy lavender oval with oval eyes.
+let pomN = 0;
+function pompom(w) {
+  const id = 'pom' + pomN++, h = w * 0.86, r = w / 2 * 0.9, cx = w / 2, base = h - 1, k = 2 / 2.16;
+  let d = '';
+  for (let i = 0; i < 96; i++) {
+    const a = i / 96 * 2 * Math.PI, c = Math.cos(a), s = Math.sin(a), e = 2 / 2.4;
+    let x = 1.08 * Math.sign(c) * Math.abs(c) ** e * k * r, y = (0.9 * Math.sign(s) * Math.abs(s) ** e - 0.9) * k * r;
+    const cy = -0.9 * k * r, ang = Math.atan2(y - cy, x), n = 1 + 0.035 * Math.sin(ang * 23 + 3) + 0.03 * Math.sin(ang * 41 - 2);
+    x *= n; y = cy + (y - cy) * n;
+    d += (i ? 'L' : 'M') + (cx + x).toFixed(2) + ' ' + (base + y).toFixed(2);
+  }
+  const hh = 1.8 * k * r, ey = base - hh * 0.52, ew = 0.1 * r, eh = 0.155 * r;
+  return `<svg width="${w}" height="${h.toFixed(1)}" viewBox="0 0 ${w} ${h.toFixed(1)}" aria-hidden="true"><defs><radialGradient id="${id}" cx="${((cx - 0.26 * r) / w).toFixed(3)}" cy="${((base - hh * 0.68) / h).toFixed(3)}" r="0.85">` +
+    `<stop offset="0" stop-color="#a8b3ff"/><stop offset=".5" stop-color="#8f9dff"/><stop offset="1" stop-color="#646eb3"/></radialGradient></defs>` +
+    `<path d="${d}Z" fill="url(#${id})"/>` +
+    [-1, 1].map(sd => `<ellipse cx="${(cx + sd * 0.32 * r).toFixed(2)}" cy="${ey.toFixed(2)}" rx="${ew.toFixed(2)}" ry="${eh.toFixed(2)}" fill="#17171c"/>`).join('') + `</svg>`;
+}
 const palFace = makeFace(64, 2.6); $('palface').append(palFace.svg); palFace.play();
-$('pals').addEventListener('click', () => { palFace.play(); const c = $('palcrit'); c.classList.remove('go'); void c.offsetWidth; c.classList.add('go'); });
+$('palpom').innerHTML = pompom(56);
+$('pals').addEventListener('click', () => { palFace.play(); for (const c of [$('palcrit'), $('palpom')]) { c.classList.remove('go'); void c.offsetWidth; c.classList.add('go'); } });
 
 // ── CPU card: a flat line that blips each time the island changes. It only draws while on screen. ──
 const cpu = $('cpu'), cctx = cpu.getContext('2d'), samples = new Array(120).fill(0);
@@ -762,14 +783,23 @@ function cpuFrame(now) {
 }
 new IntersectionObserver(([e]) => { const was = cpuOn; cpuOn = e.isIntersecting; if (cpuOn && !was) requestAnimationFrame(cpuFrame); }).observe(cpu);
 
-// ── Claude card: the buttons work ──
-const miniAct = $('miniact'), miniBox = $('mini'), miniHTML = miniAct.innerHTML;
+// ── Agents card: the buttons work, and the next request comes from the other agent ──
+const miniAct = $('miniact'), miniBox = $('mini'), miniHTML = miniAct.innerHTML, miniCrit = $('minicrit');
+const AGENTS = [
+  { crit: miniCrit.innerHTML, title: 'Allow Bash?', detail: 'swift build' },
+  { crit: pompom(24), title: 'Edit 2 files', detail: '+12 −3 lines' },
+];
+let agent = 0;
 miniBox.addEventListener('click', e => {
   const b = e.target.closest('[data-m]'); if (!b) return;
   const yes = b.dataset.m === 'yes';
   miniAct.innerHTML = `<span class="done">${yes ? '✓ Allowed' : '✕ Denied'}</span>`;
   miniBox.classList.toggle('happy', yes);
-  setTimeout(() => { miniAct.innerHTML = miniHTML; miniBox.classList.remove('happy'); }, 1800);
+  setTimeout(() => {
+    agent = 1 - agent; const a = AGENTS[agent];
+    miniCrit.innerHTML = a.crit; $('minititle').textContent = a.title; $('minidetail').textContent = a.detail;
+    miniAct.innerHTML = miniHTML; miniBox.classList.remove('happy');
+  }, 1800);
 });
 
 layoutContent();
